@@ -77,6 +77,7 @@ mkdir -p "$HOME/.openclaw/workspace"
 require_cmd tailscale
 
 say "Ensuring OpenClaw gateway baseline config"
+openclaw config set gateway.mode local
 openclaw config set gateway.bind loopback
 openclaw config set gateway.auth.mode token
 openclaw config set gateway.tailscale.mode serve
