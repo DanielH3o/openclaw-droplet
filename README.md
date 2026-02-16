@@ -50,7 +50,12 @@ After bootstrap, frontend files are in:
 
 - `~/.openclaw/workspace/project`
 
-Edit those files (or ask your agent to edit them), then refresh browser.
+Bootstrap also creates context docs for the agent in that folder:
+
+- `~/.openclaw/workspace/project/AGENTS.md`
+- `~/.openclaw/workspace/project/PROJECT_CONTEXT.md`
+
+Edit files (or ask your agent to edit them), then refresh browser.
 
 ## Manual path
 

@@ -295,6 +295,56 @@ This folder is served by nginx at the droplet public URL.
 - Ask the OpenClaw agent to edit files in this folder directly
 EOF
 
+  cat >"$project_dir/AGENTS.md" <<'EOF'
+# AGENTS.md - Project Context
+
+You are operating on a **DigitalOcean Ubuntu droplet**.
+
+## Environment
+
+- Host type: remote VPS (DigitalOcean droplet)
+- OS: Ubuntu
+- OpenClaw workspace root: `~/.openclaw/workspace`
+- Frontend project root: `~/.openclaw/workspace/project`
+
+## Frontend Serving
+
+- Public frontend URL: `http://<droplet-ip>`
+- Served by: `nginx`
+- Nginx root: `~/.openclaw/workspace/project`
+
+## Editing Workflow
+
+1. Make frontend edits in `~/.openclaw/workspace/project`
+2. Save files
+3. User refreshes browser to see changes
+
+No dashboard-specific changes are needed for this workflow.
+EOF
+
+  cat >"$project_dir/PROJECT_CONTEXT.md" <<'EOF'
+# PROJECT_CONTEXT.md
+
+This project is intentionally bootstrapped as a minimal editable web app.
+
+## Canonical Paths
+
+- Project directory: `~/.openclaw/workspace/project`
+- Main HTML: `~/.openclaw/workspace/project/index.html`
+- Styles: `~/.openclaw/workspace/project/styles.css`
+- JS: `~/.openclaw/workspace/project/app.js`
+
+## Runtime Assumptions
+
+- Deployment target is this same droplet
+- Static assets are served directly by nginx
+- Browser refresh is the deployment/update mechanism during early development
+
+## Priority
+
+When asked to work on the frontend, operate directly in this project directory first.
+EOF
+
   chmod 755 "$HOME/.openclaw" "$HOME/.openclaw/workspace" "$project_dir" || true
   chmod 644 "$project_dir"/* || true
 
