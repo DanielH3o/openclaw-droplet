@@ -62,6 +62,8 @@ if ! ensure_openclaw_on_path; then
 fi
 
 OPENCLAW_BIN="$(command -v openclaw)"
+NODE_BIN="$(command -v node || true)"
+OPENCLAW_MJS="$(readlink -f "$OPENCLAW_BIN" 2>/dev/null || realpath "$OPENCLAW_BIN" 2>/dev/null || echo "$OPENCLAW_BIN")"
 oc() { "$OPENCLAW_BIN" "$@"; }
 
 say "Pre-creating OpenClaw state dirs to avoid first-run prompts"
@@ -133,7 +135,12 @@ start_gateway_with_fallback() {
 
   echo "systemd user service unavailable; falling back to foreground gateway via nohup"
   pkill -f "openclaw gateway" >/dev/null 2>&1 || true
-  nohup bash -lc 'source "$HOME/.bashrc" >/dev/null 2>&1 || true; export PATH="$HOME/.npm-global/bin:$PATH"; exec openclaw gateway --port 18789' >"$log_file" 2>&1 &
+
+  if [[ -n "$NODE_BIN" && -x "$NODE_BIN" ]]; then
+    nohup "$NODE_BIN" "$OPENCLAW_MJS" gateway --port 18789 >"$log_file" 2>&1 &
+  else
+    nohup bash -lc 'source "$HOME/.bashrc" >/dev/null 2>&1 || true; export PATH="$HOME/.npm-global/bin:$PATH"; exec openclaw gateway --port 18789' >"$log_file" 2>&1 &
+  fi
 
   # Wait up to 25s for gateway to bind (cold starts can be slow on fresh droplets)
   local waited=0
@@ -155,6 +162,8 @@ start_gateway_with_fallback() {
   echo "Failed to start gateway in both service and fallback modes."
   echo "Check logs: $log_file"
   echo "Resolved openclaw binary: $OPENCLAW_BIN"
+  echo "Resolved openclaw entrypoint: $OPENCLAW_MJS"
+  echo "Resolved node binary: ${NODE_BIN:-<not-found>}"
   ls -l "$OPENCLAW_BIN" || true
   pgrep -af "openclaw gateway" || true
   echo "Last gateway log lines:"
