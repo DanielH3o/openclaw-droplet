@@ -9,7 +9,8 @@ Opinionated bootstrap for running OpenClaw on a DigitalOcean Ubuntu droplet with
 - Configures Discord bot token
 - Restricts Discord ingress to a single guild/channel allowlist
 - Disables Discord DMs by default
-- Sends a startup ping message to the configured Discord channel after bootstrap
+- Sets up a public placeholder frontend (`nginx`, default `http://<droplet-ip>`)
+- Sends a startup ping message to the configured Discord channel after bootstrap (includes frontend URL)
 - Installs a global `/usr/local/bin/openclaw` shim (so root/sudo users can run `openclaw ...` without switching users)
 
 ## Required inputs
@@ -29,6 +30,8 @@ ssh root@YOUR_DROPLET_IP
 # 2) Set Discord values
 export DISCORD_BOT_TOKEN="YOUR_DISCORD_BOT_TOKEN"
 export DISCORD_TARGET="YOUR_GUILD_ID/YOUR_CHANNEL_ID"
+# Optional: disable placeholder frontend
+# export FRONTEND_ENABLED=0
 
 # 3) Run bootstrap
 curl -fsSL https://raw.githubusercontent.com/DanielH3o/openclaw-droplet/main/scripts/bootstrap-root.sh | bash
