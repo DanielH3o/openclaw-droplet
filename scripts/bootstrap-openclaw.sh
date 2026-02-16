@@ -135,7 +135,9 @@ say "Ensuring OpenClaw gateway baseline config"
 oc config set gateway.mode local
 oc config set gateway.auth.mode token
 if [[ "$PUBLIC_UI" == "1" ]]; then
-  oc config set gateway.bind 0.0.0.0
+  # Valid bind modes: loopback|lan|tailnet|auto|custom
+  # Use lan for direct droplet-IP access without tunnels/domains.
+  oc config set gateway.bind lan
   oc config set gateway.trustedProxies '["127.0.0.1"]'
   configure_public_ui_firewall
 else
@@ -257,7 +259,7 @@ if [[ "$PUBLIC_UI" == "1" ]]; then
   echo "Open this from allowed IPs only: http://${DROPLET_IP}:18789"
   echo
   echo "Security applied:"
-  echo "- gateway.bind=0.0.0.0"
+  echo "- gateway.bind=lan"
   echo "- gateway.auth.mode=token"
   echo "- UFW allows tcp/18789 only from ALLOW_CIDRS"
 else

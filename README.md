@@ -69,7 +69,7 @@ curl -fsSL https://raw.githubusercontent.com/DanielH3o/openclaw-droplet/main/scr
 ```
 
 What this does:
-- Sets `gateway.bind = 0.0.0.0`
+- Sets `gateway.bind = lan`
 - Keeps `gateway.auth.mode = token`
 - Configures UFW to allow port `18789/tcp` **only** from `ALLOW_CIDRS`
 - Keeps SSH (`22/tcp`) open
