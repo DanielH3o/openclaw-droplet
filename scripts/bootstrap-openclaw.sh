@@ -133,7 +133,7 @@ start_gateway_with_fallback() {
 
   echo "systemd user service unavailable; falling back to foreground gateway via nohup"
   pkill -f "openclaw gateway" >/dev/null 2>&1 || true
-  nohup "$OPENCLAW_BIN" gateway --port 18789 >"$log_file" 2>&1 &
+  nohup bash -lc 'source "$HOME/.bashrc" >/dev/null 2>&1 || true; export PATH="$HOME/.npm-global/bin:$PATH"; exec openclaw gateway --port 18789' >"$log_file" 2>&1 &
 
   # Wait up to 25s for gateway to bind (cold starts can be slow on fresh droplets)
   local waited=0
@@ -157,6 +157,8 @@ start_gateway_with_fallback() {
   echo "Resolved openclaw binary: $OPENCLAW_BIN"
   ls -l "$OPENCLAW_BIN" || true
   pgrep -af "openclaw gateway" || true
+  echo "Last gateway log lines:"
+  tail -n 80 "$log_file" || true
   return 1
 }
 
