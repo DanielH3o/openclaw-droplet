@@ -9,6 +9,7 @@ Opinionated bootstrap for running OpenClaw on a DigitalOcean Ubuntu droplet with
 - Configures Discord bot token
 - Restricts Discord ingress to a single guild/channel allowlist
 - Disables Discord DMs by default
+- Sends a startup ping message to the configured Discord channel after bootstrap
 - Installs a global `/usr/local/bin/openclaw` shim (so root/sudo users can run `openclaw ...` without switching users)
 
 ## Required inputs
@@ -74,6 +75,13 @@ If needed, re-run root bootstrap with explicit key injection (`OPENCLAW_AUTHORIZ
 - Verify bot is invited to the target guild/channel
 - Verify token is correct
 - Verify target IDs are correct
+- Verify bot can post in the configured channel
+- If bootstrap did not send the startup ping, test manually:
+
+```bash
+openclaw message send --channel discord --target "channel:YOUR_CHANNEL_ID" --message "test"
+```
+
 - On droplet:
 
 ```bash

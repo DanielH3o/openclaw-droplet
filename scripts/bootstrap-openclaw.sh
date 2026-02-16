@@ -220,6 +220,19 @@ ensure_gateway_token
 say "Configuring Discord channel allowlist"
 configure_discord_channel
 
+send_discord_boot_ping() {
+  local ts msg
+  ts="$(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+  msg="✅ OpenClaw bootstrap complete on droplet (${ts}). Discord route is live."
+
+  if oc message send --channel discord --target "channel:${DISCORD_CHANNEL_ID}" --message "$msg" >/dev/null 2>&1; then
+    echo "Sent Discord startup ping to channel:${DISCORD_CHANNEL_ID}"
+  else
+    echo "Warning: failed to send Discord startup ping."
+    echo "Check bot token, guild/channel IDs, and bot permissions."
+  fi
+}
+
 is_gateway_listening() {
   if command -v ss >/dev/null 2>&1; then
     ss -ltn 2>/dev/null | grep -q ':18789' && return 0
@@ -346,6 +359,8 @@ start_gateway_with_fallback
 say "Checking gateway health"
 if is_gateway_listening; then
   echo "Gateway is listening on port 18789"
+  say "Sending Discord startup ping"
+  send_discord_boot_ping
 else
   echo "Gateway not listening on port 18789"
 fi
