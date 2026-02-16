@@ -19,6 +19,31 @@ require_cmd() {
 
 say() { echo -e "\n==> $*"; }
 
+append_path_if_missing() {
+  local rc_file="$1"
+  local path_line="$2"
+  [[ -f "$rc_file" ]] || touch "$rc_file"
+  grep -Fq "$path_line" "$rc_file" || echo "$path_line" >> "$rc_file"
+}
+
+ensure_openclaw_on_path() {
+  if command -v openclaw >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local npm_global_bin="$HOME/.npm-global/bin"
+  local path_line='export PATH="$HOME/.npm-global/bin:$PATH"'
+
+  if [[ -x "$npm_global_bin/openclaw" ]]; then
+    export PATH="$npm_global_bin:$PATH"
+    append_path_if_missing "$HOME/.bashrc" "$path_line"
+    append_path_if_missing "$HOME/.profile" "$path_line"
+    append_path_if_missing "$HOME/.zshrc" "$path_line"
+  fi
+
+  command -v openclaw >/dev/null 2>&1
+}
+
 say "Installing base packages"
 sudo apt-get update -y
 sudo apt-get install -y curl git ca-certificates gnupg lsb-release
@@ -35,7 +60,13 @@ if ! command -v openclaw >/dev/null 2>&1; then
   [[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc" || true
 fi
 
-require_cmd openclaw
+if ! ensure_openclaw_on_path; then
+  echo "OpenClaw appears installed but is not on PATH."
+  echo "Try: export PATH=\"$HOME/.npm-global/bin:$PATH\""
+  echo "Then re-run this script."
+  exit 1
+fi
+
 require_cmd tailscale
 
 say "Ensuring OpenClaw gateway baseline config"
