@@ -242,7 +242,9 @@ say "Configuring Discord channel allowlist"
 configure_discord_channel
 
 detect_public_ip() {
-  curl -fsS --max-time 3 ifconfig.me 2>/dev/null \
+  # Prefer cloud metadata (most reliable on DigitalOcean).
+  curl -fsS --max-time 2 http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address 2>/dev/null \
+    || curl -fsS --max-time 3 ifconfig.me 2>/dev/null \
     || curl -fsS --max-time 3 https://api.ipify.org 2>/dev/null \
     || true
 }
@@ -473,13 +475,15 @@ EOF
 }
 
 send_discord_boot_ping() {
-  local ts msg
+  local ts msg host ip
   ts="$(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+  host="$(hostname 2>/dev/null || echo unknown-host)"
+  ip="$(detect_public_ip)"
 
   if [[ -n "$FRONTEND_URL" ]]; then
-    msg="✅ OpenClaw bootstrap complete (${ts}). Discord route is live. Frontend: ${FRONTEND_URL}"
+    msg="✅ OpenClaw bootstrap complete (${ts}) on ${host}${ip:+ (${ip})}. Discord route is live. Frontend: ${FRONTEND_URL}"
   else
-    msg="⚠️ OpenClaw bootstrap complete (${ts}), Discord route is live, but frontend validation failed. Run: curl -s http://127.0.0.1 | head -n 20"
+    msg="⚠️ OpenClaw bootstrap complete (${ts}) on ${host}${ip:+ (${ip})}, Discord route is live, but frontend validation failed. Run: curl -s http://127.0.0.1/ | head -n 20"
   fi
 
   local attempt
