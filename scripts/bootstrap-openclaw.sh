@@ -29,8 +29,8 @@ if ! command -v tailscale >/dev/null 2>&1; then
 fi
 
 if ! command -v openclaw >/dev/null 2>&1; then
-  say "Installing OpenClaw"
-  curl -fsSL https://openclaw.ai/install.sh | bash
+  say "Installing OpenClaw (skip interactive onboarding)"
+  curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard
   # shellcheck disable=SC1090
   [[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc" || true
 fi
