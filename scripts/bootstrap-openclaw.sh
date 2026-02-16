@@ -234,12 +234,19 @@ seed_workspace_context_files() {
 - Frontend project root: `~/.openclaw/workspace/project`
 - Frontend is served publicly via nginx
 
+## Discord scope
+
+- Allowed guild ID: `__DISCORD_GUILD_ID__`
+- Use only the configured guild/channel allowlist from runtime config.
+
 ## Frontend workflow
 
 1. Edit files in `~/.openclaw/workspace/project`
 2. Save
 3. User refreshes browser
 EOF
+
+  sed -i "s/__DISCORD_GUILD_ID__/${DISCORD_GUILD_ID:-unknown}/g" "$ws_root/AGENTS.md"
 
   cat >"$ws_root/SOUL.md" <<'EOF'
 # SOUL.md
