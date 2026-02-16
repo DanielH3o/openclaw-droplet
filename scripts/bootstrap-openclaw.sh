@@ -404,22 +404,19 @@ EOF
   chmod 755 "$HOME" "$HOME/.openclaw" "$HOME/.openclaw/workspace" "$project_dir" || true
   chmod 644 "$project_dir"/* || true
 
-  # Deterministic nginx config: avoid distro default-site precedence issues.
-  sudo tee /etc/nginx/nginx.conf >/dev/null <<EOF
+  # Apply the exact known-good nginx fix block (validated manually).
+  sudo tee /etc/nginx/nginx.conf >/dev/null <<'EOF'
 user www-data;
 worker_processes auto;
 pid /run/nginx.pid;
 error_log /var/log/nginx/error.log;
 include /etc/nginx/modules-enabled/*.conf;
 
-events {
-  worker_connections 768;
-}
+events { worker_connections 768; }
 
 http {
   include /etc/nginx/mime.types;
   default_type application/octet-stream;
-
   sendfile on;
   access_log /var/log/nginx/access.log;
 
@@ -427,24 +424,27 @@ http {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name _;
-
-    root $project_dir;
+    root /home/openclaw/.openclaw/workspace/project;
     index index.html;
-
     location / {
-      try_files \$uri \$uri/ /index.html;
+      try_files $uri $uri/ /index.html;
     }
   }
 }
 EOF
 
+  sudo chmod 755 /home/openclaw /home/openclaw/.openclaw /home/openclaw/.openclaw/workspace /home/openclaw/.openclaw/workspace/project
+  sudo chmod 644 /home/openclaw/.openclaw/workspace/project/*
+
   sudo nginx -t
-  sudo systemctl enable --now nginx >/dev/null 2>&1 || sudo service nginx restart >/dev/null 2>&1 || true
+  sudo systemctl enable --now nginx >/dev/null 2>&1 || true
+  sudo systemctl restart nginx >/dev/null 2>&1 || sudo service nginx restart >/dev/null 2>&1 || true
+  sleep 2
 
   local public_ip
   public_ip="$(detect_public_ip)"
 
-  # Deterministic validation: stamp marker, validate local and public responses.
+  # Validation: stamp marker, validate local and public responses.
   local marker local_ok public_ok
   marker="oc-bootstrap-marker-$(date +%s)-$RANDOM"
   echo "<!-- ${marker} -->" >> "$project_dir/index.html"
@@ -466,35 +466,11 @@ EOF
     FRONTEND_URL="http://${public_ip}"
     echo "Frontend validation passed (local + public)."
   else
+    FRONTEND_URL=""
     echo "Warning: frontend validation failed (local_ok=${local_ok}, public_ok=${public_ok})."
-    echo "Applying compatibility fallback: serve project from /var/www/html."
-
-    sudo rm -rf /var/www/html
-    sudo ln -s "$project_dir" /var/www/html
-    sudo nginx -t
-    sudo systemctl restart nginx >/dev/null 2>&1 || sudo service nginx restart >/dev/null 2>&1 || true
-
-    local_ok=0
-    public_ok=0
-    if curl -fsS --max-time 3 http://127.0.0.1 2>/dev/null | grep -q "$marker"; then
-      local_ok=1
-    fi
-    if [[ -n "$public_ip" ]]; then
-      if curl -fsS --max-time 5 "http://${public_ip}" 2>/dev/null | grep -q "$marker"; then
-        public_ok=1
-      fi
-    fi
-
-    if [[ "$local_ok" == "1" && "$public_ok" == "1" ]]; then
-      FRONTEND_URL="http://${public_ip}"
-      echo "Frontend validation passed after /var/www/html fallback."
-    else
-      FRONTEND_URL=""
-      echo "Warning: frontend validation still failed after fallback (local_ok=${local_ok}, public_ok=${public_ok})."
-      echo "Debug commands:"
-      echo "  curl -s http://127.0.0.1 | head -n 20"
-      echo "  IP=\$(curl -fsS ifconfig.me); echo \$IP; curl -s http://\$IP | head -n 20"
-    fi
+    echo "Debug commands:"
+    echo "  curl -s http://127.0.0.1 | head -n 20"
+    echo "  IP=\$(curl -fsS ifconfig.me); echo \$IP; curl -s http://\$IP | head -n 20"
   fi
 }
 
