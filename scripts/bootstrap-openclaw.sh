@@ -86,6 +86,20 @@ openclaw config set gateway.trustedProxies '["127.0.0.1"]'
 say "Generating gateway token (if needed)"
 openclaw doctor --generate-gateway-token || true
 
+is_gateway_listening() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltn 2>/dev/null | grep -qE '127\.0\.0\.1:18789|\[::1\]:18789|:18789'
+    return $?
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -iTCP:18789 -sTCP:LISTEN >/dev/null 2>&1
+    return $?
+  fi
+
+  pgrep -f "openclaw gateway" >/dev/null 2>&1
+}
+
 start_gateway_with_fallback() {
   local log_file="$HOME/.openclaw/logs/gateway.log"
   mkdir -p "$HOME/.openclaw/logs"
@@ -98,9 +112,9 @@ start_gateway_with_fallback() {
   echo "systemd user service unavailable; falling back to foreground gateway via nohup"
   pkill -f "openclaw gateway" >/dev/null 2>&1 || true
   nohup openclaw gateway --port 18789 >"$log_file" 2>&1 &
-  sleep 2
+  sleep 3
 
-  if curl -fsS http://127.0.0.1:18789 >/dev/null 2>&1; then
+  if is_gateway_listening; then
     echo "Gateway started in fallback mode (nohup). Logs: $log_file"
     return 0
   fi
@@ -114,7 +128,11 @@ say "Starting/restarting gateway service"
 start_gateway_with_fallback
 
 say "Checking gateway health"
-curl -fsS http://127.0.0.1:18789 >/dev/null && echo "Gateway is responding on 127.0.0.1:18789"
+if is_gateway_listening; then
+  echo "Gateway is listening on port 18789"
+else
+  echo "Gateway not listening on port 18789"
+fi
 
 say "Tailscale setup"
 if ! tailscale status >/dev/null 2>&1; then
