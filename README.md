@@ -21,7 +21,7 @@ usermod -aG sudo openclaw
 su - openclaw
 
 # 3) Get this repo + run installer
-git clone https://github.com/YOUR_ORG/openclaw-droplet-kit.git
+git clone https://github.com/DanielH3o/openclaw-droplet.git
 cd openclaw-droplet-kit
 bash scripts/bootstrap-openclaw.sh
 ```
