@@ -648,7 +648,9 @@ start_gateway_with_fallback() {
 }
 
 say "Starting/restarting gateway service"
-start_gateway_with_fallback
+if ! start_gateway_with_fallback; then
+  echo "Warning: gateway startup reported failure; continuing with frontend setup + diagnostics."
+fi
 
 setup_placeholder_frontend
 
@@ -656,9 +658,10 @@ say "Checking gateway health"
 if is_gateway_listening; then
   echo "Gateway is listening on port 18789"
   say "Sending Discord startup ping"
-  send_discord_boot_ping
+  send_discord_boot_ping || true
 else
   echo "Gateway not listening on port 18789"
+  echo "You can still access/edit frontend while gateway troubleshooting continues."
 fi
 
 echo
