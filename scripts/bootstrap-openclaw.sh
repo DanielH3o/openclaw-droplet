@@ -598,7 +598,7 @@ start_gateway_with_fallback() {
     fi
 
     local retry_waited=0
-    while (( retry_waited < 20 )); do
+    while (( retry_waited < 35 )); do
       if is_gateway_listening; then
         echo "Gateway started after lock-conflict retry."
         return 0
@@ -606,6 +606,21 @@ start_gateway_with_fallback() {
       sleep 1
       retry_waited=$((retry_waited + 1))
     done
+
+    # Final race guard: if a gateway process exists, give it a few seconds to bind.
+    if pgrep -f "openclaw-gateway|openclaw gateway|openclaw.mjs gateway" >/dev/null 2>&1; then
+      sleep 4
+      if is_gateway_listening; then
+        echo "Gateway process was already launching; listener detected after grace period."
+        return 0
+      fi
+    fi
+  fi
+
+  # Absolute final guard against race conditions before failing.
+  if is_gateway_listening; then
+    echo "Gateway listener detected at final guard; continuing."
+    return 0
   fi
 
   echo "Failed to start gateway in both service and fallback modes."
