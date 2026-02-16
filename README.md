@@ -6,7 +6,7 @@ Opinionated starter kit to bootstrap an **OpenClaw Gateway** on a fresh DigitalO
 
 - Fast first deploy (copy/paste + one script)
 - Safe defaults (Gateway bound to loopback, token auth)
-- Easy access to chat/dashboard from your own devices (Tailscale Serve)
+- Easy access to chat/dashboard from your own devices (SSH tunnel, no extra accounts)
 - Idempotent setup (safe to re-run)
 
 ## Quick Start (fewest inputs)
@@ -20,15 +20,6 @@ curl -fsSL https://raw.githubusercontent.com/DanielH3o/openclaw-droplet/main/scr
 ```
 
 This avoids interactive `adduser` prompts entirely.
-
-### Zero-prompt Tailscale (optional)
-
-If you have a reusable/ephemeral Tailscale auth key, pass it inline so login is also non-interactive:
-
-```bash
-TAILSCALE_AUTHKEY="tskey-..." \
-curl -fsSL https://raw.githubusercontent.com/DanielH3o/openclaw-droplet/main/scripts/bootstrap-root.sh | bash
-```
 
 ## Quick Start (manual SSH path)
 
@@ -48,20 +39,21 @@ bash scripts/bootstrap-openclaw.sh
 ```
 
 When done, the script prints:
-- Tailscale HTTPS URL for dashboard/chat
-- Local fallback URL + SSH tunnel command
+- SSH tunnel command for dashboard/chat
+- Local URL (`http://localhost:18789`)
 - Gateway token location
 
 ## Security Model (default)
 
 - `gateway.bind = loopback`
 - `gateway.auth.mode = token`
-- Remote access via **Tailscale Serve** (HTTPS + identity)
+- Remote access via **SSH tunnel**
 - No need to publicly expose port `18789`
 
 ## Files
 
 - `scripts/bootstrap-openclaw.sh` — main installer
+- `scripts/bootstrap-root.sh` — root one-shot bootstrap (non-interactive user creation)
 - `cloud-init/user-data.yaml` — optional unattended first boot path
 - `docs/rollout-plan.md` — roadmap from MVP to reusable product
 

@@ -48,11 +48,6 @@ say "Installing base packages"
 sudo apt-get update -y
 sudo apt-get install -y curl git ca-certificates gnupg lsb-release
 
-if ! command -v tailscale >/dev/null 2>&1; then
-  say "Installing Tailscale"
-  curl -fsSL https://tailscale.com/install.sh | sh
-fi
-
 if ! command -v openclaw >/dev/null 2>&1; then
   say "Installing OpenClaw (skip interactive onboarding)"
   curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard
@@ -74,13 +69,10 @@ mkdir -p "$HOME/.openclaw/agents/main/sessions"
 mkdir -p "$HOME/.openclaw/credentials"
 mkdir -p "$HOME/.openclaw/workspace"
 
-require_cmd tailscale
-
 say "Ensuring OpenClaw gateway baseline config"
 openclaw config set gateway.mode local
 openclaw config set gateway.bind loopback
 openclaw config set gateway.auth.mode token
-openclaw config set gateway.tailscale.mode serve
 openclaw config set gateway.trustedProxies '["127.0.0.1"]'
 
 say "Generating gateway token (if needed)"
@@ -134,34 +126,14 @@ else
   echo "Gateway not listening on port 18789"
 fi
 
-say "Tailscale setup"
-if tailscale status >/dev/null 2>&1; then
-  echo "Tailscale already authenticated."
-else
-  if [[ -n "${TAILSCALE_AUTHKEY:-}" ]]; then
-    echo "Using provided TAILSCALE_AUTHKEY for non-interactive login..."
-    sudo tailscale up --ssh --hostname=openclaw --authkey "$TAILSCALE_AUTHKEY" || true
-  fi
-
-  if tailscale status >/dev/null 2>&1; then
-    echo "Tailscale authenticated."
-  else
-    echo "Tailscale not authenticated yet."
-    echo "Optional one-time command to enable private HTTPS UI:"
-    echo "  sudo tailscale up --ssh --hostname=openclaw"
-  fi
-fi
-
 echo
 echo "----------------------------------------"
 echo "Bootstrap complete."
 echo
-echo "If Tailscale Serve is active, dashboard/chat is at:"
-echo "  https://<your-tailnet-host>.ts.net/"
-echo
-echo "Fallback local access over SSH tunnel:"
-echo "  ssh -L 18789:127.0.0.1:18789 <user>@<droplet>"
+echo "Access UI via SSH tunnel from your local machine:"
+echo "  ssh -N -L 18789:127.0.0.1:18789 openclaw@<droplet-ip>"
 echo "  then open http://localhost:18789"
 echo
+echo "Gateway is loopback-only + token-authenticated by default."
 echo "Gateway token is stored under ~/.openclaw (mode token)."
 echo "----------------------------------------"
