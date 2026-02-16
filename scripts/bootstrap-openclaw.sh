@@ -69,14 +69,35 @@ mkdir -p "$HOME/.openclaw/agents/main/sessions"
 mkdir -p "$HOME/.openclaw/credentials"
 mkdir -p "$HOME/.openclaw/workspace"
 
+ensure_gateway_token() {
+  local token=""
+
+  token="$(openclaw config get gateway.auth.token 2>/dev/null | tr -d '"[:space:]' || true)"
+  if [[ -n "$token" && "$token" != "null" ]]; then
+    return 0
+  fi
+
+  if command -v openssl >/dev/null 2>&1; then
+    token="$(openssl rand -hex 24)"
+  elif command -v python3 >/dev/null 2>&1; then
+    token="$(python3 - <<'PY'
+import secrets
+print(secrets.token_hex(24))
+PY
+)"
+  else
+    token="$(date +%s)-$RANDOM-$RANDOM"
+  fi
+
+  openclaw config set gateway.auth.token "$token"
+}
+
 say "Ensuring OpenClaw gateway baseline config"
 openclaw config set gateway.mode local
 openclaw config set gateway.bind loopback
 openclaw config set gateway.auth.mode token
 openclaw config set gateway.trustedProxies '["127.0.0.1"]'
-
-say "Generating gateway token (if needed)"
-openclaw doctor --generate-gateway-token || true
+ensure_gateway_token
 
 is_gateway_listening() {
   if command -v ss >/dev/null 2>&1; then
