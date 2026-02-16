@@ -27,18 +27,17 @@ append_path_if_missing() {
 }
 
 ensure_openclaw_on_path() {
-  if command -v openclaw >/dev/null 2>&1; then
-    return 0
-  fi
-
   local npm_global_bin="$HOME/.npm-global/bin"
   local path_line='export PATH="$HOME/.npm-global/bin:$PATH"'
 
-  if [[ -x "$npm_global_bin/openclaw" ]]; then
+  # Persist PATH fix for future non-interactive/login shells even if openclaw is currently found.
+  append_path_if_missing "$HOME/.bashrc" "$path_line"
+  append_path_if_missing "$HOME/.profile" "$path_line"
+  append_path_if_missing "$HOME/.zshrc" "$path_line"
+
+  if [[ -d "$npm_global_bin" ]] && [[ ":$PATH:" != *":$npm_global_bin:"* ]]; then
     export PATH="$npm_global_bin:$PATH"
-    append_path_if_missing "$HOME/.bashrc" "$path_line"
-    append_path_if_missing "$HOME/.profile" "$path_line"
-    append_path_if_missing "$HOME/.zshrc" "$path_line"
+    hash -r || true
   fi
 
   command -v openclaw >/dev/null 2>&1
@@ -62,6 +61,9 @@ if ! ensure_openclaw_on_path; then
   exit 1
 fi
 
+OPENCLAW_BIN="$(command -v openclaw)"
+oc() { "$OPENCLAW_BIN" "$@"; }
+
 say "Pre-creating OpenClaw state dirs to avoid first-run prompts"
 mkdir -p "$HOME/.openclaw"
 chmod 700 "$HOME/.openclaw" || true
@@ -72,7 +74,7 @@ mkdir -p "$HOME/.openclaw/workspace"
 ensure_gateway_token() {
   local token=""
 
-  token="$(openclaw config get gateway.auth.token 2>/dev/null | tr -d '"[:space:]' || true)"
+  token="$(oc config get gateway.auth.token 2>/dev/null | tr -d '"[:space:]' || true)"
   if [[ -n "$token" && "$token" != "null" ]]; then
     return 0
   fi
@@ -89,14 +91,14 @@ PY
     token="$(date +%s)-$RANDOM-$RANDOM"
   fi
 
-  openclaw config set gateway.auth.token "$token"
+  oc config set gateway.auth.token "$token"
 }
 
 say "Ensuring OpenClaw gateway baseline config"
-openclaw config set gateway.mode local
-openclaw config set gateway.bind loopback
-openclaw config set gateway.auth.mode token
-openclaw config set gateway.trustedProxies '["127.0.0.1"]'
+oc config set gateway.mode local
+oc config set gateway.bind loopback
+oc config set gateway.auth.mode token
+oc config set gateway.trustedProxies '["127.0.0.1"]'
 ensure_gateway_token
 
 is_gateway_listening() {
@@ -117,15 +119,15 @@ start_gateway_with_fallback() {
   local log_file="$HOME/.openclaw/logs/gateway.log"
   mkdir -p "$HOME/.openclaw/logs"
 
-  if openclaw gateway restart >/dev/null 2>&1 || openclaw gateway start >/dev/null 2>&1; then
+  if oc gateway restart >/dev/null 2>&1 || oc gateway start >/dev/null 2>&1; then
     echo "Gateway started via service manager."
     return 0
   fi
 
   echo "systemd user service unavailable; falling back to foreground gateway via nohup"
   pkill -f "openclaw gateway" >/dev/null 2>&1 || true
-  nohup openclaw gateway --port 18789 >"$log_file" 2>&1 &
-  sleep 3
+  nohup "$OPENCLAW_BIN" gateway --port 18789 >"$log_file" 2>&1 &
+  sleep 5
 
   if is_gateway_listening; then
     echo "Gateway started in fallback mode (nohup). Logs: $log_file"
@@ -134,6 +136,9 @@ start_gateway_with_fallback() {
 
   echo "Failed to start gateway in both service and fallback modes."
   echo "Check logs: $log_file"
+  echo "Resolved openclaw binary: $OPENCLAW_BIN"
+  ls -l "$OPENCLAW_BIN" || true
+  pgrep -af "openclaw gateway" || true
   return 1
 }
 
