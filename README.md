@@ -21,6 +21,13 @@ curl -fsSL https://raw.githubusercontent.com/DanielH3o/openclaw-droplet/main/scr
 
 This avoids interactive `adduser` prompts entirely.
 
+If you want deterministic SSH key install for the `openclaw` user, run with your public key explicitly:
+
+```bash
+export OPENCLAW_AUTHORIZED_KEY="$(cat ~/.ssh/id_ed25519.pub)"
+curl -fsSL https://raw.githubusercontent.com/DanielH3o/openclaw-droplet/main/scripts/bootstrap-root.sh | bash
+```
+
 ## Quick Start (manual SSH path)
 
 ```bash
@@ -62,6 +69,39 @@ When done, the script prints:
 - Create droplets for you (Terraform/API integration planned)
 - Auto-DNS to a public domain
 - Team SSO or multi-tenant setup
+
+## Troubleshooting
+
+### `Permission denied (publickey)` when tunneling as `openclaw`
+
+From your local machine, test auth with verbose logs and explicit key:
+
+```bash
+ssh -i ~/.ssh/id_ed25519 -v openclaw@YOUR_DROPLET_IP
+```
+
+On the droplet (as root), verify key file + perms:
+
+```bash
+ls -ld /home/openclaw/.ssh
+ls -l /home/openclaw/.ssh/authorized_keys
+sudo -u openclaw -H bash -lc 'wc -l ~/.ssh/authorized_keys && head -n 1 ~/.ssh/authorized_keys'
+```
+
+If needed, re-run root bootstrap with explicit key injection:
+
+```bash
+export OPENCLAW_AUTHORIZED_KEY="$(cat ~/.ssh/id_ed25519.pub)"
+curl -fsSL https://raw.githubusercontent.com/DanielH3o/openclaw-droplet/main/scripts/bootstrap-root.sh | bash
+```
+
+### `Disconnected from gateway (1008): unauthorized: device token mismatch`
+
+This is usually stale browser device auth for `localhost:18789`.
+
+1. Ensure SSH tunnel is active.
+2. Open in a private/incognito window.
+3. If that works, clear local storage for `http://localhost:18789` (or remove keys `openclaw-device-identity-v1` and `openclaw.device.auth.v1`) and reload.
 
 ## Next steps
 

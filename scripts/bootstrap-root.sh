@@ -4,6 +4,9 @@ set -euo pipefail
 # Root-level non-interactive bootstrap for fresh Ubuntu droplets.
 # Usage (as root):
 #   curl -fsSL https://raw.githubusercontent.com/DanielH3o/openclaw-droplet/main/scripts/bootstrap-root.sh | bash
+# Optional explicit key injection:
+#   OPENCLAW_AUTHORIZED_KEY="$(cat ~/.ssh/id_ed25519.pub)" \
+#   curl -fsSL https://raw.githubusercontent.com/DanielH3o/openclaw-droplet/main/scripts/bootstrap-root.sh | bash
 
 OPENCLAW_USER="${OPENCLAW_USER:-openclaw}"
 REPO_URL="${REPO_URL:-https://github.com/DanielH3o/openclaw-droplet.git}"
@@ -15,6 +18,68 @@ if [[ "$EUID" -ne 0 ]]; then
 fi
 
 say() { echo -e "\n==> $*"; }
+
+collect_authorized_keys() {
+  # Priority 1: explicit env var(s) (recommended for deterministic provisioning)
+  # - OPENCLAW_AUTHORIZED_KEY  : single key
+  # - OPENCLAW_AUTHORIZED_KEYS : one or many keys separated by newlines
+  if [[ -n "${OPENCLAW_AUTHORIZED_KEYS:-}" ]]; then
+    printf '%s\n' "$OPENCLAW_AUTHORIZED_KEYS"
+  fi
+
+  if [[ -n "${OPENCLAW_AUTHORIZED_KEY:-}" ]]; then
+    printf '%s\n' "$OPENCLAW_AUTHORIZED_KEY"
+  fi
+
+  # Priority 2: existing local users' authorized_keys
+  local key_file
+  for key_file in /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys; do
+    [[ -f "$key_file" ]] || continue
+    cat "$key_file"
+    printf '\n'
+  done
+
+  # Priority 3 (DigitalOcean): metadata service public keys
+  if command -v curl >/dev/null 2>&1; then
+    local md_url="http://169.254.169.254/metadata/v1/public-keys/"
+    local key_ids
+    key_ids="$(curl -fsS --max-time 2 "$md_url" 2>/dev/null || true)"
+    if [[ -n "$key_ids" ]]; then
+      local id
+      while IFS= read -r id; do
+        [[ -n "$id" ]] || continue
+        curl -fsS --max-time 2 "${md_url}${id}" 2>/dev/null || true
+        printf '\n'
+      done <<< "$key_ids"
+    fi
+  fi
+}
+
+install_authorized_keys_for_user() {
+  local user="$1"
+  local home_dir="/home/${user}"
+  local ssh_dir="${home_dir}/.ssh"
+  local auth_file="${ssh_dir}/authorized_keys"
+
+  install -d -m 700 -o "$user" -g "$user" "$ssh_dir"
+
+  local tmp_keys
+  tmp_keys="$(mktemp)"
+  collect_authorized_keys \
+    | sed 's/\r$//' \
+    | awk 'NF {print}' \
+    | sort -u > "$tmp_keys"
+
+  if [[ -s "$tmp_keys" ]]; then
+    install -m 600 -o "$user" -g "$user" "$tmp_keys" "$auth_file"
+    say "Installed $(wc -l < "$tmp_keys" | tr -d '[:space:]') SSH key(s) for $user"
+  else
+    say "No SSH public keys found automatically"
+    echo "Set OPENCLAW_AUTHORIZED_KEY or OPENCLAW_AUTHORIZED_KEYS when running bootstrap to ensure login works."
+  fi
+
+  rm -f "$tmp_keys"
+}
 
 say "Installing base packages"
 apt-get update -y
@@ -33,12 +98,8 @@ say "Granting passwordless sudo for bootstrap user"
 echo "$OPENCLAW_USER ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/90-openclaw-bootstrap
 chmod 440 /etc/sudoers.d/90-openclaw-bootstrap
 
-# Ensure SSH key login works for the new user by copying root authorized_keys.
-if [[ -f /root/.ssh/authorized_keys ]]; then
-  say "Copying root authorized_keys to $OPENCLAW_USER"
-  install -d -m 700 -o "$OPENCLAW_USER" -g "$OPENCLAW_USER" "/home/${OPENCLAW_USER}/.ssh"
-  install -m 600 -o "$OPENCLAW_USER" -g "$OPENCLAW_USER" /root/.ssh/authorized_keys "/home/${OPENCLAW_USER}/.ssh/authorized_keys"
-fi
+say "Configuring SSH authorized_keys for '$OPENCLAW_USER'"
+install_authorized_keys_for_user "$OPENCLAW_USER"
 
 say "Cloning/updating openclaw-droplet repo"
 if [[ -d "$REPO_DIR/.git" ]]; then
