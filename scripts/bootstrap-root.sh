@@ -29,6 +29,10 @@ else
   usermod -aG sudo "$OPENCLAW_USER" || true
 fi
 
+say "Granting passwordless sudo for bootstrap user"
+echo "$OPENCLAW_USER ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/90-openclaw-bootstrap
+chmod 440 /etc/sudoers.d/90-openclaw-bootstrap
+
 # Ensure SSH key login works for the new user by copying root authorized_keys.
 if [[ -f /root/.ssh/authorized_keys ]]; then
   say "Copying root authorized_keys to $OPENCLAW_USER"
