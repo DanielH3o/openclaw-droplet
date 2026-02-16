@@ -119,9 +119,16 @@ start_gateway_with_fallback() {
   local log_file="$HOME/.openclaw/logs/gateway.log"
   mkdir -p "$HOME/.openclaw/logs"
 
-  if oc gateway restart >/dev/null 2>&1 || oc gateway start >/dev/null 2>&1; then
-    echo "Gateway started via service manager."
+  if is_gateway_listening; then
+    echo "Gateway already listening on port 18789."
     return 0
+  fi
+
+  if oc gateway restart >/dev/null 2>&1 || oc gateway start >/dev/null 2>&1; then
+    if is_gateway_listening; then
+      echo "Gateway started via service manager."
+      return 0
+    fi
   fi
 
   echo "systemd user service unavailable; falling back to foreground gateway via nohup"
@@ -138,6 +145,12 @@ start_gateway_with_fallback() {
     sleep 1
     waited=$((waited + 1))
   done
+
+  # Final guard against false negatives.
+  if is_gateway_listening; then
+    echo "Gateway is listening despite startup warnings; continuing."
+    return 0
+  fi
 
   echo "Failed to start gateway in both service and fallback modes."
   echo "Check logs: $log_file"
