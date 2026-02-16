@@ -109,7 +109,7 @@ else
 fi
 
 say "Running user bootstrap script"
-sudo -u "$OPENCLAW_USER" -H bash -lc "cd '$REPO_DIR' && bash scripts/bootstrap-openclaw.sh"
+sudo --preserve-env=PUBLIC_UI,ALLOW_CIDRS -u "$OPENCLAW_USER" -H bash -lc "cd '$REPO_DIR' && bash scripts/bootstrap-openclaw.sh"
 
 echo
 echo "Done. You can now SSH directly as '$OPENCLAW_USER'."

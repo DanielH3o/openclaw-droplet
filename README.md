@@ -57,6 +57,26 @@ When done, the script prints:
 - Remote access via **SSH tunnel**
 - No need to publicly expose port `18789`
 
+## Family Mode (no tunnel, no domain)
+
+If you want direct access from browser via droplet IP, use public UI mode with an IP allowlist.
+
+```bash
+# On droplet as root
+export PUBLIC_UI=1
+export ALLOW_CIDRS="YOUR_IP/32,DADS_IP/32"
+curl -fsSL https://raw.githubusercontent.com/DanielH3o/openclaw-droplet/main/scripts/bootstrap-root.sh | bash
+```
+
+What this does:
+- Sets `gateway.bind = 0.0.0.0`
+- Keeps `gateway.auth.mode = token`
+- Configures UFW to allow port `18789/tcp` **only** from `ALLOW_CIDRS`
+- Keeps SSH (`22/tcp`) open
+
+Then open:
+- `http://<droplet-ip>:18789` (from an allowed IP)
+
 ## Files
 
 - `scripts/bootstrap-openclaw.sh` — main installer

@@ -19,6 +19,9 @@ require_cmd() {
 
 say() { echo -e "\n==> $*"; }
 
+PUBLIC_UI="${PUBLIC_UI:-0}"
+ALLOW_CIDRS_RAW="${ALLOW_CIDRS:-}"
+
 append_path_if_missing() {
   local rc_file="$1"
   local path_line="$2"
@@ -96,11 +99,49 @@ PY
   oc config set gateway.auth.token "$token"
 }
 
+configure_public_ui_firewall() {
+  # Public UI mode keeps token auth but limits ingress to explicit CIDRs.
+  # Requires sudo privileges.
+  say "Configuring firewall allowlist for public UI mode"
+
+  sudo apt-get update -y
+  sudo apt-get install -y ufw
+
+  sudo ufw --force reset
+  sudo ufw default deny incoming
+  sudo ufw default allow outgoing
+
+  # Keep SSH reachable.
+  sudo ufw allow 22/tcp
+
+  local trimmed
+  trimmed="$(echo "$ALLOW_CIDRS_RAW" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | awk 'NF {print}')"
+  if [[ -z "$trimmed" ]]; then
+    echo "PUBLIC_UI=1 requires ALLOW_CIDRS (comma-separated CIDRs)."
+    echo "Example: ALLOW_CIDRS=\"1.2.3.4/32,5.6.7.8/32\""
+    exit 1
+  fi
+
+  while IFS= read -r cidr; do
+    [[ -n "$cidr" ]] || continue
+    sudo ufw allow from "$cidr" to any port 18789 proto tcp
+  done <<< "$trimmed"
+
+  sudo ufw --force enable
+  sudo ufw status verbose || true
+}
+
 say "Ensuring OpenClaw gateway baseline config"
 oc config set gateway.mode local
-oc config set gateway.bind loopback
 oc config set gateway.auth.mode token
-oc config set gateway.trustedProxies '["127.0.0.1"]'
+if [[ "$PUBLIC_UI" == "1" ]]; then
+  oc config set gateway.bind 0.0.0.0
+  oc config set gateway.trustedProxies '["127.0.0.1"]'
+  configure_public_ui_firewall
+else
+  oc config set gateway.bind loopback
+  oc config set gateway.trustedProxies '["127.0.0.1"]'
+fi
 ensure_gateway_token
 
 is_gateway_listening() {
@@ -210,10 +251,22 @@ echo
 echo "----------------------------------------"
 echo "Bootstrap complete."
 echo
-echo "Access UI via SSH tunnel from your local machine:"
-echo "  ssh -N -L 18789:127.0.0.1:18789 openclaw@<droplet-ip>"
-echo "  then open http://localhost:18789"
-echo
-echo "Gateway is loopback-only + token-authenticated by default."
+if [[ "$PUBLIC_UI" == "1" ]]; then
+  DROPLET_IP="$(curl -fsS --max-time 2 ifconfig.me 2>/dev/null || echo '<droplet-ip>')"
+  echo "Public UI mode is enabled."
+  echo "Open this from allowed IPs only: http://${DROPLET_IP}:18789"
+  echo
+  echo "Security applied:"
+  echo "- gateway.bind=0.0.0.0"
+  echo "- gateway.auth.mode=token"
+  echo "- UFW allows tcp/18789 only from ALLOW_CIDRS"
+else
+  echo "Access UI via SSH tunnel from your local machine:"
+  echo "  ssh -N -L 18789:127.0.0.1:18789 openclaw@<droplet-ip>"
+  echo "  then open http://localhost:18789"
+  echo
+  echo "Gateway is loopback-only + token-authenticated by default."
+fi
+
 echo "Gateway token is stored under ~/.openclaw (mode token)."
 echo "----------------------------------------"
