@@ -439,16 +439,34 @@ EOF
   sudo nginx -t
   sudo systemctl enable --now nginx >/dev/null 2>&1 || sudo service nginx restart >/dev/null 2>&1 || true
 
-  # Sanity check what nginx serves locally; warn but don't block bootstrap.
-  if ! curl -fsS --max-time 3 http://127.0.0.1 2>/dev/null | grep -q "This is your dashboard"; then
-    echo "Warning: nginx local response did not match project page marker."
-    echo "Likely another default vhost is shadowing openclaw-project."
-    echo "Debug: sudo nginx -T | grep -nE 'listen 80|default_server|root '"
-    echo "Continuing bootstrap so Discord path is not blocked."
-  fi
-
   local public_ip
   public_ip="$(detect_public_ip)"
+
+  # Sanity check what nginx serves locally; if wrong, fall back to python static server on :3000.
+  if ! curl -fsS --max-time 3 http://127.0.0.1 2>/dev/null | grep -q "This is your dashboard"; then
+    echo "Warning: nginx local response did not match project page marker."
+    echo "Falling back to python static server on port 3000."
+
+    # Stop previous fallback server if running
+    if [[ -f /tmp/openclaw-project-frontend.pid ]]; then
+      kill "$(cat /tmp/openclaw-project-frontend.pid)" >/dev/null 2>&1 || true
+      rm -f /tmp/openclaw-project-frontend.pid
+    fi
+
+    nohup python3 -m http.server 3000 --directory "$project_dir" >/tmp/openclaw-project-frontend.log 2>&1 &
+    echo $! >/tmp/openclaw-project-frontend.pid
+
+    # Best-effort firewall allow for fallback port
+    sudo ufw allow 3000/tcp >/dev/null 2>&1 || true
+
+    if [[ -n "$public_ip" ]]; then
+      FRONTEND_URL="http://${public_ip}:3000"
+    else
+      FRONTEND_URL="http://<droplet-ip>:3000"
+    fi
+    return 0
+  fi
+
   if [[ -n "$public_ip" ]]; then
     FRONTEND_URL="http://${public_ip}"
   else
