@@ -24,6 +24,8 @@ Opinionated bootstrap for running OpenClaw on a DigitalOcean Ubuntu droplet with
 
 Bootstrap configures `anthropic/claude-sonnet-4-5` as the default model.
 
+Auth is standardized via `/etc/openclaw/openclaw.env` (root-owned, group-readable by `openclaw`) and sourced by shell startup + bootstrap launchers, so child/spawned agents can inherit the same API key consistently.
+
 ## Quick Start (fewest inputs)
 
 ```bash
@@ -91,6 +93,26 @@ sudo -u openclaw -H bash /home/openclaw/openclaw-droplet/scripts/smoke-test.sh
 ```
 
 This checks gateway listener, Discord config, project files, and local/public frontend responses.
+
+## Shared API key strategy (recommended)
+
+Use one canonical OpenClaw home and one canonical env file:
+
+- `OPENCLAW_HOME=/home/openclaw/.openclaw`
+- `OPENCLAW_PROFILE=main`
+- `ANTHROPIC_API_KEY=...`
+- env file path: `/etc/openclaw/openclaw.env`
+
+When starting extra profiles/processes, source the env file first:
+
+```bash
+set -a
+source /etc/openclaw/openclaw.env
+set +a
+openclaw --profile <profile> gateway --port <port>
+```
+
+This avoids auth drift from ad-hoc homes such as `~/.openclaw-agent2`.
 
 ## Troubleshooting
 

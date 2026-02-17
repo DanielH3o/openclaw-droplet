@@ -17,6 +17,13 @@ say "Checking openclaw binary"
 command -v openclaw >/dev/null 2>&1 || fail "openclaw not found on PATH"
 pass "openclaw is on PATH: $(command -v openclaw)"
 
+say "Checking shared runtime env"
+if [[ -f /etc/openclaw/openclaw.env ]]; then
+  pass "Found /etc/openclaw/openclaw.env"
+else
+  warn "Missing /etc/openclaw/openclaw.env (spawned agents may not inherit API auth)"
+fi
+
 say "Checking gateway listener"
 if ss -ltn 2>/dev/null | grep -q ':18789'; then
   pass "Gateway port 18789 is listening"

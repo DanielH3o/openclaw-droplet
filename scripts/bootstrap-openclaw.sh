@@ -355,53 +355,42 @@ EOF
   cat >"$ws_root/AGENT-SPAWN.md" <<'EOF'
 # AGENT-SPAWN.md
 
+Use one shared OpenClaw home and one shared env file for API auth.
+Avoid creating extra homes like `~/.openclaw-agent2` unless you explicitly want isolation.
 
 ```bash
-# 1. Create profile workspace
-mkdir -p ~/.openclaw-<profile>/workspace
+# 1) Ensure shared env is present
+sudo test -f /etc/openclaw/openclaw.env
 
-# 2. Create config
-# Base it on main config (~/.openclaw/openclaw.json)
-# Key changes:
-#   - New Discord token (if using Discord)
-#   - Different gateway port (19002, 19003, etc.)
-#   - Same guild/channel permissions
+# 2) Source shared env before any OpenClaw process
+set -a
+source /etc/openclaw/openclaw.env
+set +a
 
-# 3. Copy workspace templates
+# 3) Create profile workspace inside the canonical home
+mkdir -p ~/.openclaw/profiles/<profile>/workspace
 cp ~/.openclaw/workspace/{AGENTS.md,SOUL.md,USER.md,TOOLS.md,IDENTITY.md,HEARTBEAT.md,MEMORY.md} \
-   ~/.openclaw-<profile>/workspace/
+   ~/.openclaw/profiles/<profile>/workspace/
 
-# 4. Create BOOTSTRAP.md for new agent
-# (Instructions for them to set up identity)
+# 4) Start an additional gateway/profile (example port 19002)
+nohup openclaw --profile <profile> gateway --port 19002 \
+  > ~/.openclaw/profiles/<profile>/gateway.log 2>&1 &
 
-# 5. Create startup script with API key
-cat > ~/.openclaw-<profile>/start.sh << 'EOF'
-#!/bin/bash
-export ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY"
-cd ~/.openclaw-<profile>
-nohup openclaw --profile <profile> gateway > gateway.log 2>&1 &
-\EOF
-chmod +x ~/.openclaw-<profile>/start.sh
-
-# 6. Start the agent
-~/.openclaw-<profile>/start.sh
-
-# 7. Verify
+# 5) Verify
 sleep 8
-ps aux | grep openclaw-gateway
-tail -20 ~/.openclaw-<profile>/gateway.log
+pgrep -af "openclaw.*gateway"
+tail -20 ~/.openclaw/profiles/<profile>/gateway.log
 ```
 
 ### Key Gotchas
-- **Auth:** API keys come from env vars (not auth-profiles.json in this setup)
-- **Ports:** Each agent needs a unique gateway port
-- **Startup:** Use the start.sh script to ensure env vars are inherited
-- **Discord:** Each agent needs its own bot token
+- **Auth source of truth:** `/etc/openclaw/openclaw.env`
+- **Homes:** Prefer one `OPENCLAW_HOME` (`~/.openclaw`) to avoid auth drift
+- **Ports:** Each extra gateway needs a unique port
+- **Discord:** Each concurrently-running Discord bot still needs its own bot token
 
 ### After Spawn
 - Ask the new agent to read BOOTSTRAP.md and self-initialize
-- They should pick introduce themselves in the discord and begin to build their identity.
-- Monitor their logs for auth/connection issues
+- Monitor logs for auth/connection issues
 EOF
 
   cat >"$ws_root/MEMORY.md" <<'EOF'
@@ -430,16 +419,35 @@ oc config set gateway.auth.mode token
 oc config set gateway.trustedProxies '["127.0.0.1"]'
 ensure_gateway_token
 
-persist_anthropic_env() {
-  local line="export ANTHROPIC_API_KEY=\"${ANTHROPIC_API_KEY}\""
-  append_path_if_missing "$HOME/.bashrc" "$line"
-  append_path_if_missing "$HOME/.profile" "$line"
-  append_path_if_missing "$HOME/.zshrc" "$line"
-  export ANTHROPIC_API_KEY
+setup_openclaw_env_file() {
+  local env_dir="/etc/openclaw"
+  local env_file="${env_dir}/openclaw.env"
+
+  sudo install -d -m 750 -o root -g openclaw "$env_dir"
+  sudo tee "$env_file" >/dev/null <<EOF
+# Shared OpenClaw runtime environment
+# Source this file before starting OpenClaw-related processes.
+ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}"
+OPENCLAW_HOME="${HOME}/.openclaw"
+OPENCLAW_PROFILE="main"
+EOF
+  sudo chown root:openclaw "$env_file"
+  sudo chmod 640 "$env_file"
+
+  local source_line='[[ -f /etc/openclaw/openclaw.env ]] && set -a && source /etc/openclaw/openclaw.env && set +a'
+  append_path_if_missing "$HOME/.bashrc" "$source_line"
+  append_path_if_missing "$HOME/.profile" "$source_line"
+  append_path_if_missing "$HOME/.zshrc" "$source_line"
+
+  # Ensure current shell and any child processes for this bootstrap can read the same env.
+  set -a
+  # shellcheck disable=SC1091
+  source "$env_file"
+  set +a
 }
 
-say "Configuring model provider (Anthropic env + default model)"
-persist_anthropic_env
+say "Configuring model provider (shared env file + default model)"
+setup_openclaw_env_file
 oc config set agents.defaults.model.primary "anthropic/claude-sonnet-4-5"
 
 say "Configuring Discord channel allowlist"

@@ -125,9 +125,16 @@ cat >/usr/local/bin/openclaw <<EOF
 set -euo pipefail
 TARGET_USER="${OPENCLAW_USER}"
 TARGET_BIN="${TARGET_BIN}"
+ENV_FILE="/etc/openclaw/openclaw.env"
 if [[ -z "\$TARGET_BIN" ]]; then
   echo "openclaw not found for user ${OPENCLAW_USER}"
   exit 127
+fi
+if [[ -f "\$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "\$ENV_FILE"
+  set +a
 fi
 exec sudo -u "\$TARGET_USER" -H "\$TARGET_BIN" "\$@"
 EOF
