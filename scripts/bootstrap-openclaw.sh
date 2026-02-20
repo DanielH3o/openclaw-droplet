@@ -371,47 +371,49 @@ EOF
   cat >"$ws_root/AGENT-SPAWN.md" <<'EOF'
 # AGENT-SPAWN.md
 
-Use one shared OpenClaw home and one shared env file for API auth.
-Avoid creating extra homes like `~/.openclaw-agent2` unless you explicitly want isolation.
+Default strategy: **one gateway, multiple agents**.
+Do not start another gateway just to add teammates.
 
-Before spawning an agent, make sure you have the following from your human:
-- The agent's name
-- The agent's role and identiy (use this to update the agent's SOUL.md file)
-- The agent's discord bot token
+Use one shared OpenClaw home and shared auth environment:
+- `OPENCLAW_HOME=/home/openclaw`
+- `/etc/openclaw/openclaw.env`
+- `~/.openclaw/.env`
+
+Before adding an agent, make sure you have:
+- Agent id (short slug, e.g. `aurora`)
+- Agent role/personality brief
+- Discord routing target(s) for this agent (channel/user binding)
 
 ```bash
-# 1) Ensure shared env is present
+# 1) Ensure gateway/auth env is present
 sudo test -f /etc/openclaw/openclaw.env
-
-# 2) Source shared env before any OpenClaw process
 set -a
 source /etc/openclaw/openclaw.env
 set +a
 
-# 3) Create profile workspace inside the canonical home
-mkdir -p ~/.openclaw/workspace/<profile>/
-cp ~/.openclaw/templates/{AGENTS.md,SOUL.md,USER.md,TOOLS.md,IDENTITY.md,HEARTBEAT.md,MEMORY.md} \
-   ~/.openclaw/workspace/<profile>/
+# 2) Add agent in the existing gateway home with explicit workspace
+openclaw agents add <agentId> --workspace ~/.openclaw/workspace/<agentId>
 
-# 4) Start an additional gateway/profile (example port 19002)
-nohup openclaw --profile <profile> gateway --port 19002 \
-  > ~/.openclaw/workspace/<profile>/gateway.log 2>&1 &
+# 3) Seed starter docs for the new agent workspace
+mkdir -p ~/.openclaw/workspace/<agentId>/memory
+cp ~/.openclaw/workspace/{AGENTS.md,SOUL.md,USER.md,MEMORY.md} ~/.openclaw/workspace/<agentId>/
 
 # 5) Verify
-sleep 8
-pgrep -af "openclaw.*gateway.*<profile>"
-tail -20 ~/.openclaw/workspace/<profile>/gateway.log
+openclaw agents list --bindings
+openclaw models status
+openclaw status
 ```
 
 ### Key Gotchas
-- **Auth source of truth:** `~/.openclaw/.env` (daemon fallback) and `/etc/openclaw/openclaw.env`
-- **Homes:** Prefer one `OPENCLAW_HOME` (`/home/openclaw`) to avoid auth drift
-- **Ports:** Each extra gateway needs a unique port
-- **Discord:** Each concurrently-running Discord bot still needs its own bot token
+- **Auth is per-agent dir.** If a new agent reports missing API key, ensure `ANTHROPIC_API_KEY` is present in `~/.openclaw/.env` and restart gateway.
+- **Do not create extra homes** like `~/.openclaw-aurora` for normal team agents.
+- **Do not spawn extra gateways** unless you explicitly want rescue/isolation mode.
+- **Discord token is gateway-level** in this setup (shared bot). Route by bindings/channels per agent.
 
-### After Spawn
-- Ask the new agent to read BOOTSTRAP.md and self-initialize
-- Monitor logs for auth/connection issues
+### After Add
+- Customize `<agentId>/SOUL.md` (and create `<agentId>/IDENTITY.md` if desired)
+- Confirm channel bindings route messages to the intended agent
+- Monitor logs for auth/routing issues
 EOF
 
   cat >"$ws_root/MEMORY.md" <<'EOF'
@@ -453,7 +455,6 @@ setup_openclaw_env_file() {
 # Source this file before starting OpenClaw-related processes.
 ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}"
 OPENCLAW_HOME="${HOME}"
-OPENCLAW_PROFILE="main"
 EOF
   sudo chown root:openclaw "$env_file"
   sudo chmod 640 "$env_file"
@@ -485,7 +486,7 @@ say "Configuring model provider (shared env file + defaults)"
 setup_openclaw_env_file
 setup_openclaw_global_dotenv
 oc config set agents.defaults.model.primary "anthropic/claude-sonnet-4-5"
-# Keep profile=main while forcing canonical shared workspace path.
+# Force canonical shared workspace path for the main gateway.
 oc config set agents.defaults.workspace "~/.openclaw/workspace"
 
 say "Configuring Discord channel allowlist"
