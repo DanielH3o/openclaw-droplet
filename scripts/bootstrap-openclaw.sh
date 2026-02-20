@@ -206,7 +206,7 @@ channels_cfg = guild_cfg.get("channels")
 if not isinstance(channels_cfg, dict):
     channels_cfg = {}
 
-channels_cfg[channel_id] = {"allow": True, "requireMention": False, "allowBots": True}
+channels_cfg[channel_id] = {"allow": True, "requireMention": False}
 guild_cfg["channels"] = channels_cfg
 
 guilds[guild_id] = guild_cfg
