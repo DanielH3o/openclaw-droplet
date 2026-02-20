@@ -20,6 +20,12 @@ DISCORD_CHANNEL_ID=""
 FRONTEND_ENABLED="${FRONTEND_ENABLED:-1}"
 FRONTEND_URL=""
 
+# OPENCLAW_HOME should point to the user home base (e.g. /home/openclaw), not ~/.openclaw.
+# If inherited incorrectly from the environment, normalize it before any `openclaw config` calls.
+if [[ -n "${OPENCLAW_HOME:-}" && "$OPENCLAW_HOME" == */.openclaw ]]; then
+  export OPENCLAW_HOME="${OPENCLAW_HOME%/.openclaw}"
+fi
+
 append_path_if_missing() {
   local rc_file="$1"
   local path_line="$2"
@@ -434,12 +440,15 @@ setup_openclaw_env_file() {
   local env_dir="/etc/openclaw"
   local env_file="${env_dir}/openclaw.env"
 
+  if ! getent group openclaw >/dev/null 2>&1; then
+    sudo groupadd --system openclaw >/dev/null 2>&1 || true
+  fi
   sudo install -d -m 750 -o root -g openclaw "$env_dir"
   sudo tee "$env_file" >/dev/null <<EOF
 # Shared OpenClaw runtime environment
 # Source this file before starting OpenClaw-related processes.
 ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}"
-OPENCLAW_HOME="${HOME}/.openclaw"
+OPENCLAW_HOME="${HOME}"
 OPENCLAW_PROFILE="main"
 EOF
   sudo chown root:openclaw "$env_file"
@@ -547,7 +556,7 @@ EOF
   chmod 644 "$project_dir"/* || true
 
   # Apply the exact known-good nginx fix block (validated manually).
-  sudo tee /etc/nginx/nginx.conf >/dev/null <<'EOF'
+  sudo tee /etc/nginx/nginx.conf >/dev/null <<EOF
 user www-data;
 worker_processes auto;
 pid /run/nginx.pid;
@@ -566,17 +575,17 @@ http {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name _;
-    root /home/openclaw/.openclaw/workspace/project;
+    root ${project_dir};
     index index.html;
     location / {
-      try_files $uri $uri/ /index.html;
+      try_files \$uri \$uri/ /index.html;
     }
   }
 }
 EOF
 
-  sudo chmod 755 /home/openclaw /home/openclaw/.openclaw /home/openclaw/.openclaw/workspace /home/openclaw/.openclaw/workspace/project
-  sudo chmod 644 /home/openclaw/.openclaw/workspace/project/*
+  sudo chmod 755 "$HOME" "$HOME/.openclaw" "$HOME/.openclaw/workspace" "$project_dir"
+  sudo chmod 644 "$project_dir"/*
 
   sudo nginx -t
   sudo systemctl enable --now nginx >/dev/null 2>&1 || true
