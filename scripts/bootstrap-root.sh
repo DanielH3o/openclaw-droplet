@@ -11,6 +11,7 @@ set -euo pipefail
 #   export OPENAI_API_KEY="..."
 # Optional:
 #   export FRONTEND_ENABLED=0   # skip nginx placeholder frontend
+#   export EXEC_APPROVAL_MODE=strict   # keep interactive exec approvals (default is full)
 # Optional explicit key injection:
 #   OPENCLAW_AUTHORIZED_KEY="$(cat ~/.ssh/id_ed25519.pub)" \
 #   curl -fsSL https://raw.githubusercontent.com/DanielH3o/openclaw-droplet/main/scripts/bootstrap-root.sh | bash
@@ -117,7 +118,7 @@ else
 fi
 
 say "Running user bootstrap script"
-sudo --preserve-env=DISCORD_BOT_TOKEN,DISCORD_TARGET,DISCORD_HUMAN_ID,DISCORD_USER_ID,DISCORD_HUMAN,OPENAI_API_KEY,ANTHROPIC_API_KEY,FRONTEND_ENABLED -u "$OPENCLAW_USER" -H bash -lc "cd '$REPO_DIR' && bash scripts/bootstrap-openclaw.sh"
+sudo --preserve-env=DISCORD_BOT_TOKEN,DISCORD_TARGET,DISCORD_HUMAN_ID,DISCORD_USER_ID,DISCORD_HUMAN,OPENAI_API_KEY,ANTHROPIC_API_KEY,FRONTEND_ENABLED,EXEC_APPROVAL_MODE -u "$OPENCLAW_USER" -H bash -lc "cd '$REPO_DIR' && bash scripts/bootstrap-openclaw.sh"
 
 say "Installing global shim: /usr/local/bin/openclaw (runs as $OPENCLAW_USER)"
 TARGET_BIN="$(sudo -u "$OPENCLAW_USER" -H bash -lc 'command -v openclaw' 2>/dev/null || true)"

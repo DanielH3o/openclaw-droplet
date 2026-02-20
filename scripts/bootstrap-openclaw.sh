@@ -21,6 +21,10 @@ DISCORD_GUILD_ID=""
 DISCORD_CHANNEL_ID=""
 FRONTEND_ENABLED="${FRONTEND_ENABLED:-1}"
 FRONTEND_URL=""
+# Exec approval posture for autonomous Discord provisioning:
+# - full: no interactive exec approvals (default for this droplet kit)
+# - strict: leave host approval posture unchanged
+EXEC_APPROVAL_MODE="${EXEC_APPROVAL_MODE:-full}"
 
 # OPENCLAW_HOME should point to the user home base (e.g. /home/openclaw), not ~/.openclaw.
 # If inherited incorrectly from the environment, normalize it before any `openclaw config` calls.
@@ -463,7 +467,8 @@ OPENCLAW_PROFILE="${AGENT_ID}" openclaw status
 - Keep one shared home: `OPENCLAW_HOME=/home/openclaw`
 - Keep provider key in `~/.openclaw/.env` (`OPENAI_API_KEY=...`)
 - Each dedicated bot runtime must have a unique `--port`
-- If runtime requires exec approval, request a single approval and continue automatically.
+- Bootstrap sets exec approvals to non-interactive by default (`EXEC_APPROVAL_MODE=full`).
+- If you intentionally set `EXEC_APPROVAL_MODE=strict`, runtime exec approvals may require manual approval.
 - If startup fails, check `~/.openclaw/workspace/<agentId>/gateway.log`
 
 ### After create
@@ -542,12 +547,40 @@ EOF
   chmod 600 "$dotenv_file"
 }
 
+configure_exec_approvals_for_autonomous_spawning() {
+  if [[ "$EXEC_APPROVAL_MODE" != "full" ]]; then
+    echo "Leaving exec approvals unchanged (EXEC_APPROVAL_MODE=${EXEC_APPROVAL_MODE})."
+    return 0
+  fi
+
+  local approvals_file="$HOME/.openclaw/exec-approvals.bootstrap.json"
+  cat >"$approvals_file" <<'EOF'
+{
+  "version": 1,
+  "defaults": {
+    "security": "full",
+    "ask": "off",
+    "askFallback": "full",
+    "autoAllowSkills": true
+  },
+  "agents": {}
+}
+EOF
+
+  if oc approvals set --file "$approvals_file" >/dev/null 2>&1; then
+    echo "Configured exec approvals for autonomous spawning (security=full, ask=off)."
+  else
+    echo "Warning: failed to set exec approvals automatically; provisioning may still require manual approval."
+  fi
+}
+
 say "Configuring model provider (shared env file + defaults)"
 setup_openclaw_env_file
 setup_openclaw_global_dotenv
 oc config set agents.defaults.model.primary "openai/gpt-5.2"
 # Force canonical shared workspace path for the main gateway.
 oc config set agents.defaults.workspace "~/.openclaw/workspace"
+configure_exec_approvals_for_autonomous_spawning
 
 say "Configuring Discord channel allowlist"
 configure_discord_channel
