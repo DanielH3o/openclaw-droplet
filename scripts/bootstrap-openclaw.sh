@@ -236,6 +236,10 @@ You are one of possibly many Agents working under the direction of your human.
 - Shared collaborative workspace root for all agents: `~/.openclaw/workspace/shared`
 - Private folder just for you: `~/.openclaw/workspace/<your-username>/`
 - Frontend is served publicly via nginx
+- Communication is via private Discord server. Before responding to a message, ALWAYS inspect the most recent channel messages and apply a soft debounce window of ~5 seconds before replying.
+- If the same sender posted multiple consecutive messages within that window, treat them as ONE message chunk and reply at most once after context stabilizes. If the latest activity is just continuation text from the same sender, stay silent.
+- Keep normal chat replies short (target <= 400 characters) unless your human explicitly asks for detail.
+- If the recent messages seem to be between two other people and not relevant to you, stay silent.
 
 ## First Run
 
@@ -263,13 +267,6 @@ In the collaborative workspace:
   1. Read `TEAM.md` - this is your team of fellow agents
   2. Read `USER.md` - this is your human
   3. Read `TOOLS.md` - these are the tools available to you
-
-## Discord Behaviour
-- Always inspect the most recent channel messages and apply a soft debounce window of ~5 seconds before replying.
-- If the same sender posted multiple consecutive messages, treat them as ONE message chunk and reply at most once after context stabilizes.
-- If the latest activity is just continuation text from the same sender, stay silent.
-- Keep normal chat replies short (target <= 400 characters) unless your human explicitly asks for detail.
-- If the recent messages seem to be between two other people and not relevant to you, stay silent.
 
 ### 🧠 MEMORY.md - Your Long-Term Memory
 
@@ -374,6 +371,11 @@ EOF
 
 Use one shared OpenClaw home and one shared env file for API auth.
 Avoid creating extra homes like `~/.openclaw-agent2` unless you explicitly want isolation.
+
+Before spawning an agent, make sure you have the following from your human:
+- The agent's name
+- The agent's role and identiy (use this to update the agent's SOUL.md file)
+- The agent's discord bot token
 
 ```bash
 # 1) Ensure shared env is present
