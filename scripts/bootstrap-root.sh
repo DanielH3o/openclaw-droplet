@@ -7,7 +7,7 @@ set -euo pipefail
 # Required env vars:
 #   export DISCORD_BOT_TOKEN="..."
 #   export DISCORD_TARGET="<guildId>/<channelId>"
-#   export ANTHROPIC_API_KEY="..."
+#   export OPENAI_API_KEY="..."
 # Optional:
 #   export FRONTEND_ENABLED=0   # skip nginx placeholder frontend
 # Optional explicit key injection:
@@ -116,7 +116,7 @@ else
 fi
 
 say "Running user bootstrap script"
-sudo --preserve-env=DISCORD_BOT_TOKEN,DISCORD_TARGET,ANTHROPIC_API_KEY,FRONTEND_ENABLED -u "$OPENCLAW_USER" -H bash -lc "cd '$REPO_DIR' && bash scripts/bootstrap-openclaw.sh"
+sudo --preserve-env=DISCORD_BOT_TOKEN,DISCORD_TARGET,OPENAI_API_KEY,ANTHROPIC_API_KEY,FRONTEND_ENABLED -u "$OPENCLAW_USER" -H bash -lc "cd '$REPO_DIR' && bash scripts/bootstrap-openclaw.sh"
 
 say "Installing global shim: /usr/local/bin/openclaw (runs as $OPENCLAW_USER)"
 TARGET_BIN="$(sudo -u "$OPENCLAW_USER" -H bash -lc 'command -v openclaw' 2>/dev/null || true)"
