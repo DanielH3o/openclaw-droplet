@@ -371,50 +371,71 @@ EOF
   cat >"$ws_root/AGENT-SPAWN.md" <<'EOF'
 # AGENT-SPAWN.md
 
-Default strategy: **one gateway, multiple agents**.
-Do not start another gateway just to add teammates.
+Policy: when asked to create a **new bot/agent**, always create a **dedicated bot runtime**:
+- its own OpenClaw profile/state
+- its own gateway process (unique port)
+- its own heartbeat/workspace
+- its own Discord bot token
 
-Use one shared OpenClaw home and shared auth environment:
-- `OPENCLAW_HOME=/home/openclaw`
-- `/etc/openclaw/openclaw.env`
-- `~/.openclaw/.env`
+Never use `sessions_spawn` for this request type.
 
-Before adding an agent, make sure you have:
-- Agent id (short slug, e.g. `aurora`)
-- Agent role/personality brief
-- Discord routing target(s) for this agent (channel/user binding)
+## Always collect exactly these 3 inputs first
+1. Agent id/name (slug, e.g. `nova`)
+2. Role/personality brief
+3. Discord bot token
+
+Do **not** ask for guild/channel target. Reuse the build-script defaults for this environment.
 
 ```bash
-# 1) Ensure gateway/auth env is present
-sudo test -f /etc/openclaw/openclaw.env
+# Inputs
+AGENT_ID="<agentId>"
+DISCORD_BOT_TOKEN_AGENT="<discord-bot-token>"
+PORT="19002"   # choose a unique base port per agent
+
+# 1) Source shared env/auth baseline
 set -a
 source /etc/openclaw/openclaw.env
 set +a
 
-# 2) Add agent in the existing gateway home with explicit workspace
-openclaw agents add <agentId> --workspace ~/.openclaw/workspace/<agentId>
+# 2) Prepare dedicated profile workspace
+mkdir -p ~/.openclaw/workspace/${AGENT_ID}/memory
+cp ~/.openclaw/workspace/{AGENTS.md,SOUL.md,USER.md,MEMORY.md} ~/.openclaw/workspace/${AGENT_ID}/ || true
 
-# 3) Seed starter docs for the new agent workspace
-mkdir -p ~/.openclaw/workspace/<agentId>/memory
-cp ~/.openclaw/workspace/{AGENTS.md,SOUL.md,USER.md,MEMORY.md} ~/.openclaw/workspace/<agentId>/
+# 3) Configure this profile to use same guild/channel defaults + this agent token
+OPENCLAW_PROFILE="${AGENT_ID}" openclaw config set agents.defaults.workspace "~/.openclaw/workspace/${AGENT_ID}"
+OPENCLAW_PROFILE="${AGENT_ID}" openclaw config set channels.discord.enabled true
+OPENCLAW_PROFILE="${AGENT_ID}" openclaw config set channels.discord.groupPolicy "allowlist"
+OPENCLAW_PROFILE="${AGENT_ID}" openclaw config set channels.discord.allowBots true
+OPENCLAW_PROFILE="${AGENT_ID}" openclaw config set channels.discord.token "${DISCORD_BOT_TOKEN_AGENT}"
+OPENCLAW_PROFILE="${AGENT_ID}" openclaw config set channels.discord.dmPolicy "disabled"
+OPENCLAW_PROFILE="${AGENT_ID}" openclaw config set channels.discord.guilds.__DISCORD_GUILD_ID__.requireMention false
+OPENCLAW_PROFILE="${AGENT_ID}" openclaw config set channels.discord.guilds.__DISCORD_GUILD_ID__.channels.__DISCORD_CHANNEL_ID__.allow true
+OPENCLAW_PROFILE="${AGENT_ID}" openclaw config set channels.discord.guilds.__DISCORD_GUILD_ID__.channels.__DISCORD_CHANNEL_ID__.requireMention false
+
+# 4) Start dedicated gateway process
+nohup env OPENCLAW_PROFILE="${AGENT_ID}" openclaw gateway --port "${PORT}" \
+  > "~/.openclaw/workspace/${AGENT_ID}/gateway.log" 2>&1 &
 
 # 5) Verify
-openclaw agents list --bindings
-openclaw models status
-openclaw status
+sleep 6
+pgrep -af "openclaw.*gateway.*--port ${PORT}"
+OPENCLAW_PROFILE="${AGENT_ID}" openclaw status
 ```
 
-### Key Gotchas
-- **Auth is per-agent dir.** If a new agent reports missing API key, ensure `OPENAI_API_KEY` is present in `~/.openclaw/.env` and restart gateway.
-- **Do not create extra homes** like `~/.openclaw-aurora` for normal team agents.
-- **Do not spawn extra gateways** unless you explicitly want rescue/isolation mode.
-- **Discord token is gateway-level** in this setup (shared bot). Route by bindings/channels per agent.
+### Key gotchas
+- Keep one shared home: `OPENCLAW_HOME=/home/openclaw`
+- Keep provider key in `~/.openclaw/.env` (`OPENAI_API_KEY=...`)
+- Each dedicated bot runtime must have a unique `--port`
+- If startup fails, check `~/.openclaw/workspace/<agentId>/gateway.log`
 
-### After Add
-- Customize `<agentId>/SOUL.md` (and create `<agentId>/IDENTITY.md` if desired)
-- Confirm channel bindings route messages to the intended agent
-- Monitor logs for auth/routing issues
+### After create
+- Update `~/.openclaw/workspace/<agentId>/SOUL.md` with the provided role/personality
+- Optionally create `IDENTITY.md`
+- Confirm the new bot responds in the default guild/channel
 EOF
+
+  sed -i "s/__DISCORD_GUILD_ID__/$DISCORD_GUILD_ID/g" "$ws_root/AGENT-SPAWN.md"
+  sed -i "s/__DISCORD_CHANNEL_ID__/$DISCORD_CHANNEL_ID/g" "$ws_root/AGENT-SPAWN.md"
 
   cat >"$ws_root/MEMORY.md" <<'EOF'
 # MEMORY.md
