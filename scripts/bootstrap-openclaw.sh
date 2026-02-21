@@ -670,32 +670,38 @@ set -a
 source /etc/openclaw/openclaw.env
 set +a
 
-# Hard guard: every child config write must be profile-scoped.
-ocp() { OPENCLAW_PROFILE="$AGENT_ID" openclaw "$@"; }
+# Hard isolation: each spawned bot gets its own OpenClaw home/runtime.
+CHILD_HOME="$HOME/.openclaw-$AGENT_ID"
+CHILD_PROFILE="main"
+
+oc_child() { OPENCLAW_HOME="$CHILD_HOME" openclaw --profile "$CHILD_PROFILE" "$@"; }
 
 main_token_before="$(openclaw config get channels.discord.token 2>/dev/null | tr -d '"[:space:]' || true)"
 
-mkdir -p ~/.openclaw/workspace/"$AGENT_ID"/memory ~/.openclaw/workspace/agents
+mkdir -p ~/.openclaw/workspace/"$AGENT_ID"/memory ~/.openclaw/workspace/agents "$CHILD_HOME"
 cp ~/.openclaw/workspace/{AGENTS.md,SOUL.md,USER.md,MEMORY.md} ~/.openclaw/workspace/"$AGENT_ID"/ 2>/dev/null || true
 
 echo "# Role: $ROLE" >> ~/.openclaw/workspace/"$AGENT_ID"/SOUL.md
 
-ocp config set agents.defaults.workspace "~/.openclaw/workspace/$AGENT_ID"
-ocp config set channels.discord.enabled true
-ocp config set channels.discord.groupPolicy "allowlist"
-ocp config set channels.discord.allowBots true
-ocp config set channels.discord.token "$DISCORD_BOT_TOKEN_AGENT"
-ocp config set channels.discord.dm.enabled true
-ocp config set channels.discord.dm.policy "allowlist"
-ocp config set channels.discord.dm.allowFrom '["__DISCORD_HUMAN_ID__"]'
-ocp config set channels.discord.dm.groupEnabled false
-ocp config set channels.discord.guilds.__DISCORD_GUILD_ID__.requireMention false
-ocp config set channels.discord.guilds.__DISCORD_GUILD_ID__.users '["__DISCORD_HUMAN_ID__"]'
-ocp config set channels.discord.guilds.__DISCORD_GUILD_ID__.channels.__DISCORD_CHANNEL_ID__.allow true
-ocp config set channels.discord.guilds.__DISCORD_GUILD_ID__.channels.__DISCORD_CHANNEL_ID__.requireMention false
-ocp config set tools.exec.host gateway
-ocp config set tools.exec.security full
-ocp config set tools.exec.ask off
+oc_child config set agents.defaults.workspace "~/.openclaw/workspace/$AGENT_ID"
+oc_child config set gateway.mode local
+oc_child config set gateway.bind loopback
+oc_child config set gateway.auth.mode token
+oc_child config set channels.discord.enabled true
+oc_child config set channels.discord.groupPolicy "allowlist"
+oc_child config set channels.discord.allowBots true
+oc_child config set channels.discord.token "$DISCORD_BOT_TOKEN_AGENT"
+oc_child config set channels.discord.dm.enabled true
+oc_child config set channels.discord.dm.policy "allowlist"
+oc_child config set channels.discord.dm.allowFrom '["__DISCORD_HUMAN_ID__"]'
+oc_child config set channels.discord.dm.groupEnabled false
+oc_child config set channels.discord.guilds.__DISCORD_GUILD_ID__.requireMention false
+oc_child config set channels.discord.guilds.__DISCORD_GUILD_ID__.users '["__DISCORD_HUMAN_ID__"]'
+oc_child config set channels.discord.guilds.__DISCORD_GUILD_ID__.channels.__DISCORD_CHANNEL_ID__.allow true
+oc_child config set channels.discord.guilds.__DISCORD_GUILD_ID__.channels.__DISCORD_CHANNEL_ID__.requireMention false
+oc_child config set tools.exec.host gateway
+oc_child config set tools.exec.security full
+oc_child config set tools.exec.ask off
 
 main_token_after="$(openclaw config get channels.discord.token 2>/dev/null | tr -d '"[:space:]' || true)"
 if [[ -n "$main_token_before" && "$main_token_before" != "$main_token_after" ]]; then
@@ -703,21 +709,21 @@ if [[ -n "$main_token_before" && "$main_token_before" != "$main_token_after" ]];
   exit 1
 fi
 
-nohup env OPENCLAW_PROFILE="$AGENT_ID" openclaw gateway --port "$PORT" > ~/.openclaw/workspace/"$AGENT_ID"/gateway.log 2>&1 &
+nohup env OPENCLAW_HOME="$CHILD_HOME" OPENCLAW_PROFILE="$CHILD_PROFILE" openclaw gateway --port "$PORT" > ~/.openclaw/workspace/"$AGENT_ID"/gateway.log 2>&1 &
 sleep 2
 
-python3 - <<'PY' "$AGENT_ID" "$PORT" "$ROLE"
+python3 - <<'PY' "$AGENT_ID" "$PORT" "$ROLE" "$CHILD_HOME"
 import json, os, sys
-agent,port,role=sys.argv[1],int(sys.argv[2]),sys.argv[3]
+agent,port,role,home=sys.argv[1],int(sys.argv[2]),sys.argv[3],sys.argv[4]
 p=os.path.expanduser('~/.openclaw/workspace/agents/registry.json')
 os.makedirs(os.path.dirname(p), exist_ok=True)
 d={}
 if os.path.exists(p):
   try:d=json.load(open(p))
   except Exception:d={}
-d[agent]={"port":port,"role":role}
+d[agent]={"port":port,"role":role,"home":home}
 json.dump(d, open(p,'w'), indent=2)
-print(json.dumps({"agent_id":agent,"port":port,"status":"started"}))
+print(json.dumps({"agent_id":agent,"port":port,"home":home,"status":"started"}))
 PY
 EOF
   sudo sed -i "s/__DISCORD_GUILD_ID__/${DISCORD_GUILD_ID}/g" "$spawn_sh"
