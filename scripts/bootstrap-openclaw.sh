@@ -695,6 +695,9 @@ oc_child config set channels.discord.dm.enabled true
 oc_child config set channels.discord.dm.policy "allowlist"
 oc_child config set channels.discord.dm.allowFrom '["__DISCORD_HUMAN_ID__"]'
 oc_child config set channels.discord.dm.groupEnabled false
+# Newer OpenClaw schemas may use flattened DM keys; set both forms.
+oc_child config set channels.discord.dmPolicy "allowlist"
+oc_child config set channels.discord.allowFrom '["__DISCORD_HUMAN_ID__"]'
 
 GUILDS_JSON="$(python3 - <<'PY'
 import json
@@ -714,6 +717,9 @@ oc_child config set tools.exec.host gateway
 oc_child config set tools.exec.security full
 oc_child config set tools.exec.ask off
 
+# Normalize schema changes before startup (required on some builds).
+OPENCLAW_HOME="$CHILD_HOME" openclaw --profile "$CHILD_PROFILE" doctor --fix >/dev/null 2>&1 || true
+
 child_group_policy="$(OPENCLAW_HOME="$CHILD_HOME" openclaw --profile "$CHILD_PROFILE" config get channels.discord.groupPolicy 2>/dev/null | tr -d '"[:space:]' || true)"
 child_guild_allow="$(OPENCLAW_HOME="$CHILD_HOME" openclaw --profile "$CHILD_PROFILE" config get channels.discord.guilds.__DISCORD_GUILD_ID__.channels.__DISCORD_CHANNEL_ID__.allow 2>/dev/null | tr -d '"[:space:]' || true)"
 if [[ "$child_group_policy" != "allowlist" || "$child_guild_allow" != "true" ]]; then
@@ -728,7 +734,7 @@ if [[ -n "$main_token_before" && "$main_token_before" != "$main_token_after" ]];
   exit 1
 fi
 
-nohup env OPENCLAW_HOME="$CHILD_HOME" OPENCLAW_PROFILE="$CHILD_PROFILE" openclaw gateway --port "$PORT" > ~/.openclaw/workspace/"$AGENT_ID"/gateway.log 2>&1 &
+nohup env OPENCLAW_HOME="$CHILD_HOME" OPENCLAW_PROFILE="$CHILD_PROFILE" openclaw --profile "$CHILD_PROFILE" gateway --allow-unconfigured --port "$PORT" > ~/.openclaw/workspace/"$AGENT_ID"/gateway.log 2>&1 &
 
 ready=0
 for _ in $(seq 1 25); do
