@@ -670,27 +670,38 @@ set -a
 source /etc/openclaw/openclaw.env
 set +a
 
+# Hard guard: every child config write must be profile-scoped.
+ocp() { OPENCLAW_PROFILE="$AGENT_ID" openclaw "$@"; }
+
+main_token_before="$(openclaw config get channels.discord.token 2>/dev/null | tr -d '"[:space:]' || true)"
+
 mkdir -p ~/.openclaw/workspace/"$AGENT_ID"/memory ~/.openclaw/workspace/agents
 cp ~/.openclaw/workspace/{AGENTS.md,SOUL.md,USER.md,MEMORY.md} ~/.openclaw/workspace/"$AGENT_ID"/ 2>/dev/null || true
 
 echo "# Role: $ROLE" >> ~/.openclaw/workspace/"$AGENT_ID"/SOUL.md
 
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set agents.defaults.workspace "~/.openclaw/workspace/$AGENT_ID"
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.enabled true
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.groupPolicy "allowlist"
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.allowBots true
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.token "$DISCORD_BOT_TOKEN_AGENT"
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.dm.enabled true
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.dm.policy "allowlist"
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.dm.allowFrom '["__DISCORD_HUMAN_ID__"]'
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.dm.groupEnabled false
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.guilds.__DISCORD_GUILD_ID__.requireMention false
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.guilds.__DISCORD_GUILD_ID__.users '["__DISCORD_HUMAN_ID__"]'
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.guilds.__DISCORD_GUILD_ID__.channels.__DISCORD_CHANNEL_ID__.allow true
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.guilds.__DISCORD_GUILD_ID__.channels.__DISCORD_CHANNEL_ID__.requireMention false
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set tools.exec.host gateway
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set tools.exec.security full
-OPENCLAW_PROFILE="$AGENT_ID" openclaw config set tools.exec.ask off
+ocp config set agents.defaults.workspace "~/.openclaw/workspace/$AGENT_ID"
+ocp config set channels.discord.enabled true
+ocp config set channels.discord.groupPolicy "allowlist"
+ocp config set channels.discord.allowBots true
+ocp config set channels.discord.token "$DISCORD_BOT_TOKEN_AGENT"
+ocp config set channels.discord.dm.enabled true
+ocp config set channels.discord.dm.policy "allowlist"
+ocp config set channels.discord.dm.allowFrom '["__DISCORD_HUMAN_ID__"]'
+ocp config set channels.discord.dm.groupEnabled false
+ocp config set channels.discord.guilds.__DISCORD_GUILD_ID__.requireMention false
+ocp config set channels.discord.guilds.__DISCORD_GUILD_ID__.users '["__DISCORD_HUMAN_ID__"]'
+ocp config set channels.discord.guilds.__DISCORD_GUILD_ID__.channels.__DISCORD_CHANNEL_ID__.allow true
+ocp config set channels.discord.guilds.__DISCORD_GUILD_ID__.channels.__DISCORD_CHANNEL_ID__.requireMention false
+ocp config set tools.exec.host gateway
+ocp config set tools.exec.security full
+ocp config set tools.exec.ask off
+
+main_token_after="$(openclaw config get channels.discord.token 2>/dev/null | tr -d '"[:space:]' || true)"
+if [[ -n "$main_token_before" && "$main_token_before" != "$main_token_after" ]]; then
+  echo "ERROR: main profile discord token changed during child spawn; aborting to protect main bot." >&2
+  exit 1
+fi
 
 nohup env OPENCLAW_PROFILE="$AGENT_ID" openclaw gateway --port "$PORT" > ~/.openclaw/workspace/"$AGENT_ID"/gateway.log 2>&1 &
 sleep 2
