@@ -686,6 +686,10 @@ install_kiwi_exec_wrapper
 oc config set agents.defaults.model.primary "openai/gpt-5.2"
 # Force canonical shared workspace path for the main gateway.
 oc config set agents.defaults.workspace "~/.openclaw/workspace"
+# Force non-interactive host exec defaults for Kiwi operator workflows.
+oc config set tools.exec.host "gateway"
+oc config set tools.exec.security "full"
+oc config set tools.exec.ask "off"
 configure_exec_approvals_for_autonomous_spawning
 verify_exec_approvals
 

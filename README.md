@@ -10,6 +10,7 @@ Opinionated bootstrap for running OpenClaw on a DigitalOcean Ubuntu droplet with
 - Restricts Discord ingress to a single guild/channel allowlist
 - Enables Discord DMs only for the configured human allowlist
 - Installs `/usr/local/bin/kiwi-exec` for owner-DM `/exec` shell command execution (timeout + output cap + audit log)
+- Sets `tools.exec` defaults to `host=gateway security=full ask=off` for non-interactive operator execution
 - Sets up a public workspace frontend on nginx (`http://<droplet-ip>`) and validates local+public responses with a marker check
 - Sends a startup ping message to the configured Discord channel after bootstrap (includes frontend URL, hostname, and detected droplet IP)
 - Installs a global `/usr/local/bin/openclaw` shim (so root/sudo users can run `openclaw ...` without switching users)

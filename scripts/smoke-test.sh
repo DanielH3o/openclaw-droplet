@@ -66,6 +66,14 @@ else
   fail "kiwi-exec command execution check failed"
 fi
 
+say "Checking exec runtime defaults"
+EXEC_HOST="$(openclaw config get tools.exec.host 2>/dev/null | tr -d '"[:space:]' || true)"
+EXEC_SECURITY="$(openclaw config get tools.exec.security 2>/dev/null | tr -d '"[:space:]' || true)"
+EXEC_ASK="$(openclaw config get tools.exec.ask 2>/dev/null | tr -d '"[:space:]' || true)"
+[[ "$EXEC_HOST" == "gateway" ]] && pass "tools.exec.host=gateway" || warn "tools.exec.host=${EXEC_HOST:-<unset>}"
+[[ "$EXEC_SECURITY" == "full" ]] && pass "tools.exec.security=full" || warn "tools.exec.security=${EXEC_SECURITY:-<unset>}"
+[[ "$EXEC_ASK" == "off" ]] && pass "tools.exec.ask=off" || warn "tools.exec.ask=${EXEC_ASK:-<unset>}"
+
 APPROVALS_RAW="$(openclaw approvals get --gateway 2>/dev/null || openclaw approvals get 2>/dev/null || true)"
 APPROVALS_ASK="$(python3 - <<'PY' "$APPROVALS_RAW"
 import json, sys
