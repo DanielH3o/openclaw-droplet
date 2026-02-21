@@ -710,7 +710,21 @@ if [[ -n "$main_token_before" && "$main_token_before" != "$main_token_after" ]];
 fi
 
 nohup env OPENCLAW_HOME="$CHILD_HOME" OPENCLAW_PROFILE="$CHILD_PROFILE" openclaw gateway --port "$PORT" > ~/.openclaw/workspace/"$AGENT_ID"/gateway.log 2>&1 &
-sleep 2
+
+ready=0
+for _ in $(seq 1 25); do
+  if grep -q "listening on ws://127.0.0.1:${PORT}" ~/.openclaw/workspace/"$AGENT_ID"/gateway.log 2>/dev/null; then
+    ready=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "$ready" != "1" ]]; then
+  echo "ERROR: child gateway did not become ready on port $PORT" >&2
+  tail -n 80 ~/.openclaw/workspace/"$AGENT_ID"/gateway.log >&2 || true
+  exit 1
+fi
 
 python3 - <<'PY' "$AGENT_ID" "$PORT" "$ROLE" "$CHILD_HOME"
 import json, os, sys
@@ -734,14 +748,53 @@ EOF
   mkdir -p "$bridge_dir"
   cat > "$bridge_py" <<'PY'
 #!/usr/bin/env python3
-import json, os
+import json, os, re, time, uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from subprocess import run
 
 TOKEN=os.environ.get("OPERATOR_BRIDGE_TOKEN","")
 PORT=int(os.environ.get("OPERATOR_BRIDGE_PORT","8787"))
+LOG=os.path.expanduser("~/.openclaw/logs/operator-bridge.log")
+AGENT_RE=re.compile(r"^[a-z0-9][a-z0-9-]{1,30}$")
+
+
+def log(event, **kw):
+  os.makedirs(os.path.dirname(LOG), exist_ok=True)
+  rec={"ts":time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),"event":event,**kw}
+  with open(LOG,"a",encoding="utf-8") as f:
+    f.write(json.dumps(rec, ensure_ascii=False)+"\n")
+
+
+def normalize_payload(body):
+  agent_id = body.get("agent_id") or body.get("agentId") or body.get("name")
+  role = body.get("role")
+  discord_token = body.get("discord_token") or body.get("discordBotToken") or body.get("discord_bot_token")
+  port = body.get("port")
+
+  missing=[]
+  if not agent_id: missing.append("agent_id")
+  if not role: missing.append("role")
+  if not discord_token: missing.append("discord_token")
+  if missing:
+    return None, {"error":"bad_request","detail":"missing required fields","missing":missing}
+
+  agent_id=str(agent_id).strip().lower()
+  if not AGENT_RE.match(agent_id):
+    return None, {"error":"bad_request","detail":"invalid agent_id; use lowercase letters, numbers, hyphen (2-31 chars)"}
+
+  role=str(role).strip()
+  discord_token=str(discord_token).strip()
+  port="" if port is None else str(port).strip()
+  if port and not port.isdigit():
+    return None, {"error":"bad_request","detail":"port must be numeric when provided"}
+
+  return {"agent_id":agent_id,"role":role,"discord_token":discord_token,"port":port}, None
+
 
 class H(BaseHTTPRequestHandler):
+  def log_message(self, fmt, *args):
+    return
+
   def _send(self, code, obj):
     b=json.dumps(obj).encode()
     self.send_response(code)
@@ -758,29 +811,43 @@ class H(BaseHTTPRequestHandler):
     self._send(404,{"error":"not_found"})
 
   def do_POST(self):
+    req_id=str(uuid.uuid4())[:8]
     if not self._auth():
+      log("unauthorized", req_id=req_id, path=self.path)
       return self._send(401,{"error":"unauthorized"})
     if self.path!="/spawn-agent":
       return self._send(404,{"error":"not_found"})
+
     try:
       n=int(self.headers.get('Content-Length','0'))
       body=json.loads(self.rfile.read(n) or b"{}")
-      agent_id=body["agent_id"]
-      role=body["role"]
-      discord_token=body["discord_token"]
-      port=str(body.get("port",""))
     except Exception as e:
-      return self._send(400,{"error":"bad_request","detail":str(e)})
+      return self._send(400,{"error":"bad_request","detail":f"invalid JSON: {e}"})
 
-    cmd=["/usr/local/bin/kiwi-spawn-agent",agent_id,role,discord_token]
-    if port: cmd.append(port)
+    payload, err = normalize_payload(body)
+    if err:
+      log("spawn_rejected", req_id=req_id, error=err)
+      return self._send(400, err)
+
+    cmd=["/usr/local/bin/kiwi-spawn-agent", payload["agent_id"], payload["role"], payload["discord_token"]]
+    if payload["port"]:
+      cmd.append(payload["port"])
+
+    log("spawn_start", req_id=req_id, agent_id=payload["agent_id"], role=payload["role"], port=payload["port"], token="***redacted***")
+    t0=time.time()
     r=run(cmd, capture_output=True, text=True)
-    return self._send(200 if r.returncode==0 else 500, {
+    dur_ms=int((time.time()-t0)*1000)
+
+    out={
       "ok": r.returncode==0,
       "exit_code": r.returncode,
       "stdout": r.stdout[-4000:],
       "stderr": r.stderr[-4000:],
-    })
+      "request_id": req_id,
+      "duration_ms": dur_ms,
+    }
+    log("spawn_done", req_id=req_id, ok=(r.returncode==0), exit_code=r.returncode, duration_ms=dur_ms, stderr_tail=r.stderr[-300:])
+    return self._send(200 if r.returncode==0 else 500, out)
 
 if __name__=="__main__":
   HTTPServer(("127.0.0.1", PORT), H).serve_forever()
