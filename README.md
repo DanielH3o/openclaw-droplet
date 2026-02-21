@@ -11,6 +11,7 @@ Opinionated bootstrap for running OpenClaw on a DigitalOcean Ubuntu droplet with
 - Enables Discord DMs only for the configured human allowlist
 - Installs `/usr/local/bin/kiwi-exec` for owner-DM `/exec` shell command execution (timeout + output cap + audit log)
 - Sets `tools.exec` defaults to `host=gateway security=full ask=off` for non-interactive operator execution
+- Installs a local Operator Bridge (`127.0.0.1:8787`) with `/spawn-agent` endpoint for dedicated-agent provisioning
 - Sets up a public workspace frontend on nginx (`http://<droplet-ip>`) and validates local+public responses with a marker check
 - Sends a startup ping message to the configured Discord channel after bootstrap (includes frontend URL, hostname, and detected droplet IP)
 - Installs a global `/usr/local/bin/openclaw` shim (so root/sudo users can run `openclaw ...` without switching users)
@@ -119,6 +120,24 @@ openclaw --profile <profile> gateway --port <port>
 ```
 
 This avoids auth drift from ad-hoc homes such as `~/.openclaw-agent2`.
+
+## Operator Bridge (spawn-only)
+
+Bootstrap installs a localhost-only bridge for deterministic dedicated-agent creation:
+
+- Health: `GET http://127.0.0.1:8787/health`
+- Spawn: `POST http://127.0.0.1:8787/spawn-agent`
+- Auth token: `/etc/openclaw/operator-bridge.env` (`OPERATOR_BRIDGE_TOKEN`)
+
+Example:
+
+```bash
+source /etc/openclaw/operator-bridge.env
+curl -sS -X POST "http://127.0.0.1:${OPERATOR_BRIDGE_PORT}/spawn-agent" \
+  -H "Authorization: Bearer ${OPERATOR_BRIDGE_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"nova","role":"research helper","discord_token":"YOUR_BOT_TOKEN"}'
+```
 
 ## Troubleshooting
 

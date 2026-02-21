@@ -91,6 +91,19 @@ else
   warn "Exec approvals may be interactive (defaults.ask=${APPROVALS_ASK:-<unset>})"
 fi
 
+say "Checking operator bridge"
+if [[ -f /etc/openclaw/operator-bridge.env ]]; then
+  # shellcheck disable=SC1091
+  source /etc/openclaw/operator-bridge.env
+  if curl -fsS --max-time 3 http://127.0.0.1:${OPERATOR_BRIDGE_PORT:-8787}/health >/dev/null 2>&1; then
+    pass "Operator bridge healthy on 127.0.0.1:${OPERATOR_BRIDGE_PORT:-8787}"
+  else
+    warn "Operator bridge health check failed"
+  fi
+else
+  warn "Missing /etc/openclaw/operator-bridge.env"
+fi
+
 say "Checking frontend files"
 PROJECT_DIR="$HOME/.openclaw/workspace/project"
 [[ -f "$PROJECT_DIR/index.html" ]] || fail "Missing $PROJECT_DIR/index.html"

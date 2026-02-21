@@ -27,6 +27,7 @@ FRONTEND_URL=""
 EXEC_APPROVAL_MODE="${EXEC_APPROVAL_MODE:-full}"
 KIWI_EXEC_TIMEOUT_SECONDS="${KIWI_EXEC_TIMEOUT_SECONDS:-60}"
 KIWI_EXEC_MAX_OUTPUT_BYTES="${KIWI_EXEC_MAX_OUTPUT_BYTES:-16384}"
+OPERATOR_BRIDGE_PORT="${OPERATOR_BRIDGE_PORT:-8787}"
 
 # OPENCLAW_HOME should point to the user home base (e.g. /home/openclaw), not ~/.openclaw.
 # If inherited incorrectly from the environment, normalize it before any `openclaw config` calls.
@@ -278,8 +279,9 @@ In Discord DMs, only the configured human (`__DISCORD_HUMAN_ID__`) can issue pri
   - Run the command through `/usr/local/bin/kiwi-exec`.
   - Use the `exec` tool with `host=gateway`, `security=full`, and `ask=off` for this command path.
   - Return exit code + truncated stdout/stderr summary.
-- `/spawn ...`, `/stop ...`, `/restart ...`, `/agents`
-  - Allowed only in DM with the configured human.
+- Spawn/manage agents (preferred path)
+  - For agent creation, call the local Operator Bridge endpoint (`http://127.0.0.1:__OPERATOR_BRIDGE_PORT__/spawn-agent`) with bearer token from `/etc/openclaw/operator-bridge.env`.
+  - This avoids brittle chat command formatting and gives deterministic spawn behavior.
 
 Rules:
 - Never execute shell commands from guild/public messages.
@@ -402,6 +404,7 @@ This is a starting point. Add your own conventions, style, and rules as you figu
 EOF
   sed -i "s/__DISCORD_GUILD_ID__/$DISCORD_GUILD_ID/g" "$ws_root/AGENTS.md"
   sed -i "s/__DISCORD_HUMAN_ID__/$DISCORD_HUMAN_ID/g" "$ws_root/AGENTS.md"
+  sed -i "s/__OPERATOR_BRIDGE_PORT__/$OPERATOR_BRIDGE_PORT/g" "$ws_root/AGENTS.md"
 
   cat >"$ws_root/SOUL.md" <<'EOF'
 # SOUL.md
@@ -608,6 +611,169 @@ EOF
   sudo chmod 755 "$wrapper_path"
 }
 
+install_operator_bridge() {
+  local bridge_dir="$HOME/.openclaw/operator-bridge"
+  local bridge_py="$bridge_dir/server.py"
+  local spawn_sh="/usr/local/bin/kiwi-spawn-agent"
+  local env_dir="/etc/openclaw"
+  local env_file="$env_dir/operator-bridge.env"
+  local token
+
+  token="$(python3 - <<'PY'
+import secrets
+print(secrets.token_hex(24))
+PY
+)"
+
+  sudo install -d -m 750 -o root -g openclaw "$env_dir"
+  sudo tee "$env_file" >/dev/null <<EOF
+OPERATOR_BRIDGE_TOKEN="${token}"
+OPERATOR_BRIDGE_PORT="${OPERATOR_BRIDGE_PORT}"
+EOF
+  sudo chown root:openclaw "$env_file"
+  sudo chmod 640 "$env_file"
+
+  sudo tee "$spawn_sh" >/dev/null <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+AGENT_ID="${1:-}"
+ROLE="${2:-}"
+DISCORD_BOT_TOKEN_AGENT="${3:-}"
+PORT="${4:-}"
+
+[[ -n "$AGENT_ID" && -n "$ROLE" && -n "$DISCORD_BOT_TOKEN_AGENT" ]] || { echo "usage: kiwi-spawn-agent <agent_id> <role> <discord_token> [port]"; exit 2; }
+
+if [[ -z "$PORT" ]]; then
+  PORT="$(python3 - <<'PY'
+import json, os
+p=os.path.expanduser('~/.openclaw/workspace/agents/registry.json')
+base=19002
+used=set()
+if os.path.exists(p):
+  try:
+    d=json.load(open(p))
+    for v in d.values():
+      port=v.get('port')
+      if isinstance(port,int): used.add(port)
+  except Exception:
+    pass
+port=base
+while port in used:
+  port+=1
+print(port)
+PY
+)"
+fi
+
+set -a
+source /etc/openclaw/openclaw.env
+set +a
+
+mkdir -p ~/.openclaw/workspace/"$AGENT_ID"/memory ~/.openclaw/workspace/agents
+cp ~/.openclaw/workspace/{AGENTS.md,SOUL.md,USER.md,MEMORY.md} ~/.openclaw/workspace/"$AGENT_ID"/ 2>/dev/null || true
+
+echo "# Role: $ROLE" >> ~/.openclaw/workspace/"$AGENT_ID"/SOUL.md
+
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set agents.defaults.workspace "~/.openclaw/workspace/$AGENT_ID"
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.enabled true
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.groupPolicy "allowlist"
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.allowBots true
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.token "$DISCORD_BOT_TOKEN_AGENT"
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.dm.enabled true
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.dm.policy "allowlist"
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.dm.allowFrom '["__DISCORD_HUMAN_ID__"]'
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.dm.groupEnabled false
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.guilds.__DISCORD_GUILD_ID__.requireMention false
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.guilds.__DISCORD_GUILD_ID__.users '["__DISCORD_HUMAN_ID__"]'
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.guilds.__DISCORD_GUILD_ID__.channels.__DISCORD_CHANNEL_ID__.allow true
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set channels.discord.guilds.__DISCORD_GUILD_ID__.channels.__DISCORD_CHANNEL_ID__.requireMention false
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set tools.exec.host gateway
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set tools.exec.security full
+OPENCLAW_PROFILE="$AGENT_ID" openclaw config set tools.exec.ask off
+
+nohup env OPENCLAW_PROFILE="$AGENT_ID" openclaw gateway --port "$PORT" > ~/.openclaw/workspace/"$AGENT_ID"/gateway.log 2>&1 &
+sleep 2
+
+python3 - <<'PY' "$AGENT_ID" "$PORT" "$ROLE"
+import json, os, sys
+agent,port,role=sys.argv[1],int(sys.argv[2]),sys.argv[3]
+p=os.path.expanduser('~/.openclaw/workspace/agents/registry.json')
+os.makedirs(os.path.dirname(p), exist_ok=True)
+d={}
+if os.path.exists(p):
+  try:d=json.load(open(p))
+  except Exception:d={}
+d[agent]={"port":port,"role":role}
+json.dump(d, open(p,'w'), indent=2)
+print(json.dumps({"agent_id":agent,"port":port,"status":"started"}))
+PY
+EOF
+  sudo sed -i "s/__DISCORD_GUILD_ID__/${DISCORD_GUILD_ID}/g" "$spawn_sh"
+  sudo sed -i "s/__DISCORD_CHANNEL_ID__/${DISCORD_CHANNEL_ID}/g" "$spawn_sh"
+  sudo sed -i "s/__DISCORD_HUMAN_ID__/${DISCORD_HUMAN_ID}/g" "$spawn_sh"
+  sudo chmod 755 "$spawn_sh"
+
+  mkdir -p "$bridge_dir"
+  cat > "$bridge_py" <<'PY'
+#!/usr/bin/env python3
+import json, os
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from subprocess import run
+
+TOKEN=os.environ.get("OPERATOR_BRIDGE_TOKEN","")
+PORT=int(os.environ.get("OPERATOR_BRIDGE_PORT","8787"))
+
+class H(BaseHTTPRequestHandler):
+  def _send(self, code, obj):
+    b=json.dumps(obj).encode()
+    self.send_response(code)
+    self.send_header('Content-Type','application/json')
+    self.send_header('Content-Length',str(len(b)))
+    self.end_headers(); self.wfile.write(b)
+
+  def _auth(self):
+    return self.headers.get('Authorization','')==f'Bearer {TOKEN}'
+
+  def do_GET(self):
+    if self.path=="/health":
+      return self._send(200,{"ok":True})
+    self._send(404,{"error":"not_found"})
+
+  def do_POST(self):
+    if not self._auth():
+      return self._send(401,{"error":"unauthorized"})
+    if self.path!="/spawn-agent":
+      return self._send(404,{"error":"not_found"})
+    try:
+      n=int(self.headers.get('Content-Length','0'))
+      body=json.loads(self.rfile.read(n) or b"{}")
+      agent_id=body["agent_id"]
+      role=body["role"]
+      discord_token=body["discord_token"]
+      port=str(body.get("port",""))
+    except Exception as e:
+      return self._send(400,{"error":"bad_request","detail":str(e)})
+
+    cmd=["/usr/local/bin/kiwi-spawn-agent",agent_id,role,discord_token]
+    if port: cmd.append(port)
+    r=run(cmd, capture_output=True, text=True)
+    return self._send(200 if r.returncode==0 else 500, {
+      "ok": r.returncode==0,
+      "exit_code": r.returncode,
+      "stdout": r.stdout[-4000:],
+      "stderr": r.stderr[-4000:],
+    })
+
+if __name__=="__main__":
+  HTTPServer(("127.0.0.1", PORT), H).serve_forever()
+PY
+  chmod 700 "$bridge_py"
+
+  pkill -f "operator-bridge/server.py" >/dev/null 2>&1 || true
+  nohup bash -lc "set -a; source '$env_file'; set +a; exec python3 '$bridge_py'" > "$HOME/.openclaw/logs/operator-bridge.log" 2>&1 &
+}
+
 configure_exec_approvals_for_autonomous_spawning() {
   if [[ "$EXEC_APPROVAL_MODE" != "full" ]]; then
     echo "Leaving exec approvals unchanged (EXEC_APPROVAL_MODE=${EXEC_APPROVAL_MODE})."
@@ -683,6 +849,7 @@ say "Configuring model provider (shared env file + defaults)"
 setup_openclaw_env_file
 setup_openclaw_global_dotenv
 install_kiwi_exec_wrapper
+install_operator_bridge
 oc config set agents.defaults.model.primary "openai/gpt-5.2"
 # Force canonical shared workspace path for the main gateway.
 oc config set agents.defaults.workspace "~/.openclaw/workspace"
@@ -1068,6 +1235,7 @@ echo "- Guild ID:   ${DISCORD_GUILD_ID}"
 echo "- Channel ID: ${DISCORD_CHANNEL_ID}"
 echo "- DM policy:  allowlist (human only: ${DISCORD_HUMAN_ID})"
 echo "- Group mode: allowlist (configured guild/channel; non-bot humans restricted to configured human)"
+echo "- Operator bridge: http://127.0.0.1:${OPERATOR_BRIDGE_PORT} (spawn endpoint: /spawn-agent)"
 if [[ -n "$FRONTEND_URL" ]]; then
   echo "- Placeholder frontend: ${FRONTEND_URL}"
 fi
