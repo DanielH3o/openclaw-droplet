@@ -66,10 +66,21 @@ else
   fail "kiwi-exec command execution check failed"
 fi
 
-if openclaw approvals get defaults.ask 2>/dev/null | tr -d '"[:space:]' | grep -q '^off$'; then
+APPROVALS_RAW="$(openclaw approvals get --gateway 2>/dev/null || openclaw approvals get 2>/dev/null || true)"
+APPROVALS_ASK="$(python3 - <<'PY' "$APPROVALS_RAW"
+import json, sys
+raw=sys.argv[1]
+try:
+  data=json.loads(raw)
+  print((data.get('defaults') or {}).get('ask',''))
+except Exception:
+  print('')
+PY
+)"
+if [[ "$APPROVALS_ASK" == "off" ]]; then
   pass "Exec approvals are non-interactive (defaults.ask=off)"
 else
-  warn "Exec approvals may be interactive (defaults.ask != off)"
+  warn "Exec approvals may be interactive (defaults.ask=${APPROVALS_ASK:-<unset>})"
 fi
 
 say "Checking frontend files"

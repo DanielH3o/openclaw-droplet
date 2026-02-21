@@ -276,6 +276,7 @@ In Discord DMs, only the configured human (`__DISCORD_HUMAN_ID__`) can issue pri
 
 - `/exec <shell command>`
   - Run the command through `/usr/local/bin/kiwi-exec`.
+  - Use the `exec` tool with `host=gateway`, `security=full`, and `ask=off` for this command path.
   - Return exit code + truncated stdout/stderr summary.
 - `/spawn ...`, `/stop ...`, `/restart ...`, `/agents`
   - Allowed only in DM with the configured human.
@@ -627,7 +628,8 @@ configure_exec_approvals_for_autonomous_spawning() {
 }
 EOF
 
-  if oc approvals set --file "$approvals_file" >/dev/null 2>&1; then
+  if oc approvals set --gateway --file "$approvals_file" >/dev/null 2>&1 \
+    || oc approvals set --file "$approvals_file" >/dev/null 2>&1; then
     echo "Configured exec approvals for autonomous spawning (security=full, ask=off)."
   else
     echo "Warning: failed to set exec approvals automatically; provisioning may still require manual approval."
@@ -639,14 +641,28 @@ verify_exec_approvals() {
     return 0
   fi
 
-  # CLI compatibility note:
-  # some OpenClaw builds support `approvals set` but do not expose a readable
-  # `approvals get <path>` interface. In those versions, strict read-back
-  # checks return unset even when approvals were accepted.
-  if oc approvals --help >/dev/null 2>&1; then
-    echo "Exec approvals command available; proceeding (read-back check skipped for CLI compatibility)."
+  local raw ask
+  raw="$(oc approvals get --gateway 2>/dev/null || oc approvals get 2>/dev/null || true)"
+  if [[ -z "$raw" ]]; then
+    echo "Warning: could not read approvals config for verification."
+    return 0
+  fi
+
+  ask="$(python3 - <<'PY' "$raw"
+import json, sys
+try:
+  data=json.loads(sys.argv[1])
+except Exception:
+  print("")
+  raise SystemExit(0)
+print((data.get("defaults") or {}).get("ask", ""))
+PY
+)"
+
+  if [[ "$ask" == "off" ]]; then
+    echo "Verified exec approvals: defaults.ask=off"
   else
-    echo "Warning: approvals command unavailable; runtime exec may require manual approval."
+    echo "Warning: approvals defaults.ask is '${ask:-<unset>}' (expected 'off')."
   fi
 }
 
